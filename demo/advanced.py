@@ -130,9 +130,7 @@ def make_cdp_nav_handler(cdp: CDPClient, session_id: str, scope: EventScope, log
         except TimeoutError:
             pass
         finally:
-            handlers = cdp._event_handlers.get('Page.loadEventFired', [])
-            if _on_load in handlers:
-                handlers.remove(_on_load)
+            cdp.off_event('Page.loadEventFired', _on_load)
         scope.emit(NavigationCompleteEvent(target_id=scope.scope_id, url=event.url))
         return event.url
 
@@ -435,8 +433,10 @@ async def run_demo() -> None:
             tab.emit(e)
             events.append(e)
 
-        # await each event in parallel (can't use gather directly — Pydantic unhashable)
-        await asyncio.gather(*[asyncio.ensure_future(e._completion.wait()) for e in events])
+        async def _wait_event(event: BaseEvent[Any]) -> None:
+            await event
+
+        await asyncio.gather(*[_wait_event(e) for e in events])
         par_ms = (time.perf_counter_ns() - t0) / 1_000_000
         speedup = seq_ms / par_ms if par_ms > 0 else 0
 

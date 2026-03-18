@@ -95,8 +95,12 @@ class PopupsWatchdog:
     """Auto-dismisses JavaScript dialogs (alert/confirm/prompt).
 
     Bridges CDP events → agent-cdp events → handler processing.
-    The CDP listener emits PopupDialogEvent on the scope, and the
-    handler auto-accepts via CDP.
+    Uses dual-handler pattern:
+    - Direct handler (p=100): synchronous recording only
+    - Queued handler (p=50): async CDP dismiss
+
+    This is the idiomatic Direct/Queued separation — synchronous work
+    runs inline in emit(), async I/O goes through the event loop.
     """
 
     def __init__(self, cdp: CDPClient) -> None:
@@ -106,15 +110,24 @@ class PopupsWatchdog:
         self.dismissed_dialogs: list[dict[str, str]] = []
 
     def attach(self, scope: EventScope, session_id: str) -> None:
-        """Connect popup handler and register CDP event bridge."""
+        """Connect dual handlers and register CDP event bridge."""
         self._scope = scope
         self._session_id = session_id
 
-        # agent-cdp connection: Direct handler for PopupDialogEvent
+        # Direct handler (p=100): synchronous recording only
         scope.connect(
             PopupDialogEvent,
-            self._handle_dialog_sync,
+            self._record_dialog,
             mode=ConnectionType.DIRECT,
+            priority=100,
+        )
+
+        # Queued handler (p=50): async CDP dismiss
+        scope.connect(
+            PopupDialogEvent,
+            self._dismiss_dialog_async,
+            mode=ConnectionType.QUEUED,
+            target_scope=scope,
             priority=50,
         )
 
@@ -144,28 +157,27 @@ class PopupsWatchdog:
         except Exception:
             logger.exception('Failed to emit PopupDialogEvent')
 
-    def _handle_dialog_sync(self, event: PopupDialogEvent) -> None:
-        """Direct handler — record and schedule async dismiss."""
+    def _record_dialog(self, event: PopupDialogEvent) -> None:
+        """Direct handler (p=100) — synchronous recording only."""
         self.dismissed_dialogs.append({
             'type': event.dialog_type,
             'message': event.message,
         })
         logger.info(
-            'PopupsWatchdog: auto-dismissing %s dialog: "%s"',
+            'PopupsWatchdog: recorded %s dialog: "%s"',
             event.dialog_type,
             event.message,
         )
-        # Schedule the async CDP call (can't await in Direct handler)
-        asyncio.get_event_loop().create_task(self._dismiss_dialog())
 
-    async def _dismiss_dialog(self) -> None:
-        """Async CDP call to dismiss the dialog."""
+    async def _dismiss_dialog_async(self, event: PopupDialogEvent) -> None:
+        """Queued handler (p=50) — async CDP call to dismiss the dialog."""
         try:
             await self.cdp.send(
                 'Page.handleJavaScriptDialog',
                 {'accept': True},
                 session_id=self._session_id,
             )
+            logger.info('PopupsWatchdog: dismissed %s dialog', event.dialog_type)
         except Exception:
             logger.exception('Failed to dismiss dialog via CDP')
 

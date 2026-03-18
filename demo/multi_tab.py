@@ -23,6 +23,7 @@ from typing import Any
 
 from agent_cdp.connection.types import ConnectionType
 from agent_cdp.events.aggregation import event_result
+from agent_cdp.events.base import BaseEvent
 from agent_cdp.scope.group import ScopeGroup
 from agent_cdp.scope.scope import EventScope
 
@@ -56,6 +57,8 @@ TABS = [
     {'name': 'Xiaohongshu', 'url': 'https://www.xiaohongshu.com', 'domain': 'xiaohongshu.com'},
     {'name': 'reCAPTCHA', 'url': 'https://www.google.com/recaptcha/api2/demo', 'domain': 'google.com'},
 ]
+
+TABS_NAMES = [t['name'] for t in TABS]
 
 # ── Output helpers ──
 
@@ -142,9 +145,7 @@ async def navigate_and_wait(
     except asyncio.TimeoutError:
         pass
     finally:
-        handlers = cdp._event_handlers.get('Page.loadEventFired', [])
-        if on_load in handlers:
-            handlers.remove(on_load)
+        cdp.off_event('Page.loadEventFired', on_load)
 
     return (time.perf_counter_ns() - t0) / 1000.0
 
@@ -274,7 +275,7 @@ async def run_multi_tab() -> None:
             sw.attach(scope, sid)
             screenshot_per_tab[name] = sw
 
-            ok(f'{tab_label(name)} PopupsWatchdog(Direct,p=50) + ScreenshotWatchdog(Queued)')
+            ok(f'{tab_label(name)} PopupsWatchdog(Direct,p=100 + Queued,p=50) + ScreenshotWatchdog(Queued)')
 
             # Captcha watchdog only on reCAPTCHA tab
             if name == 'reCAPTCHA':
@@ -474,8 +475,10 @@ async def run_multi_tab() -> None:
             scope.emit(ss_ev)
             ss_events[name] = ss_ev
 
-        # Await all screenshots (use _completion.wait() — proper coroutines for gather)
-        await asyncio.gather(*(ev._completion.wait() for ev in ss_events.values()))
+        async def _wait_event(event: BaseEvent[Any]) -> None:
+            await event
+
+        await asyncio.gather(*(_wait_event(ev) for ev in ss_events.values()))
         total_ss_us = (time.perf_counter_ns() - t_ss_start) / 1000.0
 
         for name, ss_ev in ss_events.items():
@@ -508,7 +511,7 @@ async def run_multi_tab() -> None:
         test_ev = ScreenshotEvent()
         scopes['Google'].emit(test_ev)
         try:
-            await asyncio.wait_for(test_ev._completion.wait(), timeout=10.0)
+            await asyncio.wait_for(_wait_event(test_ev), timeout=10.0)
             # Check if handler succeeded
             results = test_ev.event_results
             has_error = any(
@@ -580,9 +583,6 @@ async def run_multi_tab() -> None:
         if chrome_proc:
             kill_chrome(chrome_proc)
             info('Chrome terminated')
-
-
-TABS_NAMES = [t['name'] for t in TABS]
 
 
 def main() -> None:

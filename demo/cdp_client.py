@@ -54,6 +54,30 @@ class CDPClient:
         """Register a handler for a CDP event (e.g. 'Page.javascriptDialogOpening')."""
         self._event_handlers.setdefault(method, []).append(callback)
 
+    def off_event(self, method: str, callback: Callable[..., Any]) -> None:
+        """Remove a previously registered CDP event handler."""
+        handlers = self._event_handlers.get(method, [])
+        if callback in handlers:
+            handlers.remove(callback)
+
+    async def evaluate(
+        self,
+        expression: str,
+        *,
+        session_id: str | None = None,
+    ) -> Any:
+        """Convenience: Runtime.evaluate with returnByValue + awaitPromise."""
+        result = await self.send(
+            'Runtime.evaluate',
+            {
+                'expression': expression,
+                'returnByValue': True,
+                'awaitPromise': True,
+            },
+            session_id=session_id,
+        )
+        return result.get('result', {}).get('value')
+
     async def _recv_loop(self) -> None:
         try:
             async for raw in self._ws:

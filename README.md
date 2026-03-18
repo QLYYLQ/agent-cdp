@@ -217,33 +217,86 @@ Benchmarked on real websites (Google, Xiaohongshu, Bilibili, reCAPTCHA Demo) wit
 
 **Key insight:** agent-cdp framework overhead averages **43 us** per emit — **0.0017%** of end-to-end operation time (avg 2.54s). The bottleneck is always network I/O, never the event system.
 
-### Raw CDP vs Playwright: 2x+ speed advantage
+### Raw CDP vs agent-cdp vs Playwright
 
-Both channels connected to the same Chrome instance. Identical JavaScript executed through both channels to isolate pure automation-layer overhead.
+Three channels connected to the same Chrome instance. Identical JavaScript executed through all channels to isolate pure automation-layer overhead.
 
-| Operation | CDP (p50) | Playwright (p50) | PW/CDP ratio |
-|-----------|-----------|-------------------|-------------|
-| JS evaluate (title) | 1.24 ms | 3.79 ms | **2.95x** |
-| JS evaluate (links) | 1.41 ms | 3.43 ms | **2.44x** |
-| DOM querySelector h1 | 3.78 ms | 13.44 ms | **3.57x** |
-| DOM querySelectorAll a | 2.57 ms | 8.24 ms | **2.99x** |
-| querySelectorAll (436-node page) | 5.26 ms | 88.60 ms | **16.19x** |
-| Screenshot (PNG) | 48.21 ms | 66.31 ms | **1.43x** |
-| DOMSnapshot + styles | 1.47 ms | 3.64 ms | **2.38x** |
-| Accessibility tree | 2.05 ms | 4.27 ms | **2.03x** |
-| Full cleaning pipeline (5 evals) | 7.17 ms | 18.47 ms | **2.41x** |
+- **Raw CDP** — direct WebSocket commands via minimal CDPClient
+- **agent-cdp** — `emit(Event)` → Queued handler → CDP WebSocket → `await event_result()`
+- **Playwright** — `page.evaluate()` / `page.screenshot()` / high-level API
 
-**Overall: Playwright is 2.18x slower than raw CDP** (18.38s vs 40.09s total across 2 sites x 12 ops x 100 iterations).
+| Operation | Raw CDP (p50) | agent-cdp (p50) | Playwright (p50) | acdp/CDP | PW/acdp |
+|-----------|--------------|-----------------|------------------|----------|---------|
+| JS evaluate (title) | 1.24 ms | 1.51 ms | 3.79 ms | 1.22x | **2.51x** |
+| JS evaluate (links) | 1.41 ms | 1.38 ms | 3.43 ms | 0.98x | **2.49x** |
+| DOM querySelector h1 | 3.78 ms | 4.71 ms | 13.44 ms | 1.25x | **2.85x** |
+| DOM querySelectorAll a | 2.57 ms | 3.69 ms | 8.24 ms | 1.44x | **2.23x** |
+| querySelectorAll (436-node page) | 5.26 ms | 5.16 ms | 88.60 ms | 0.98x | **17.17x** |
+| Screenshot (PNG) | 48.21 ms | 47.01 ms | 66.31 ms | 0.98x | **1.41x** |
+| DOMSnapshot + styles | 1.47 ms | 1.47 ms | 3.64 ms | 1.00x | **2.48x** |
+| Accessibility tree | 2.05 ms | 2.10 ms | 4.27 ms | 1.02x | **2.03x** |
+| Full cleaning pipeline (5 evals) | 7.17 ms | 8.02 ms | 18.47 ms | 1.12x | **2.30x** |
 
-| Category | CDP total | PW total | Ratio |
-|----------|-----------|----------|-------|
-| JS eval (5 ops) | 1.64s | 3.89s | 2.38x |
-| DOM API (querySelector) | 1.64s | 12.26s | **7.49x** |
-| Content (HTML) | 434 ms | 813 ms | 1.87x |
-| Binary (screenshot) | 11.19s | 15.13s | 1.35x |
-| Specialized (snapshot + a11y) | 1.75s | 3.90s | 2.22x |
+**acdp/CDP ≈ 1.0x** — agent-cdp's ~40us event dispatch overhead is negligible on millisecond-scale CDP operations.
 
-DOM API operations show the largest gap because Playwright wraps each element in an `ElementHandle` with IPC overhead, while CDP operates on raw `nodeId` integers.
+**PW/acdp = 2–17x** — Playwright's protocol overhead (IPC, ElementHandle wrapping) compounds on every call.
+
+| Category | Raw CDP | agent-cdp | Playwright | acdp/CDP | PW/acdp |
+|----------|---------|-----------|------------|----------|---------|
+| JS eval (5 ops) | 1.64s | 1.73s | 3.89s | 1.05x | 2.25x |
+| DOM API (querySelector) | 1.64s | 1.90s | 12.26s | 1.16x | **6.45x** |
+| Content (HTML) | 434 ms | 464 ms | 813 ms | 1.07x | 1.75x |
+| Binary (screenshot) | 11.19s | 10.96s | 15.13s | 0.98x | 1.38x |
+| Specialized (snapshot + a11y) | 1.75s | 1.89s | 3.90s | 1.08x | 2.06x |
+| Pipeline (5-step cleaning) | 1.76s | 1.56s | 3.68s | 0.89x | 2.36x |
+
+DOM API operations show the largest gap because Playwright wraps each element in an `ElementHandle` with IPC overhead, while agent-cdp (like raw CDP) operates on raw `nodeId` integers.
+
+Reproduce: `uv run python -m demo.bench_cdp_vs_pw` (Raw CDP vs PW) and `uv run python -m demo.bench_agentcdp_vs_pw` (agent-cdp vs PW)
+
+### Real-website benchmark: agent-cdp vs Playwright
+
+Tested on production websites with complex DOM structures. 50 iterations per operation, same Chrome instance.
+
+| Site | DOM nodes | Depth | agent-cdp total | PW total | PW/acdp |
+|------|-----------|-------|-----------------|----------|---------|
+| **Amazon** | 5014 | 27 | 33.73s | 75.67s | 2.24x |
+| **Xiaohongshu** | 2356 | 28 | 27.93s | 34.37s | 1.23x |
+| **Bilibili** | 2650 | 21 | 21.64s | 37.27s | 1.72x |
+| **Google** | 594 | 19 | 4.02s | 16.67s | 4.15x |
+
+Per-operation breakdown (p50 values):
+
+| Operation | Amazon acdp | Amazon PW | XHS acdp | XHS PW | Bilibili acdp | Bilibili PW | Google acdp | Google PW |
+|-----------|-------------|-----------|----------|--------|---------------|-------------|-------------|-----------|
+| get_html | 104 ms | 126 ms | 66 ms | 81 ms | 33 ms | 40 ms | 26 ms | 34 ms |
+| eval_title | 1.8 ms | 3.9 ms | 2.0 ms | 4.0 ms | 2.0 ms | 4.4 ms | 1.8 ms | 4.0 ms |
+| eval_links | 6.3 ms | 16.2 ms | 2.1 ms | 7.7 ms | 3.8 ms | 9.7 ms | 2.2 ms | 4.4 ms |
+| eval_dom_stats | 3.2 ms | 5.7 ms | 2.7 ms | 5.8 ms | 3.2 ms | 5.9 ms | 1.8 ms | 3.5 ms |
+| eval_interactive | 7.4 ms | 24.1 ms | 3.2 ms | 8.9 ms | 4.5 ms | 11.1 ms | 2.4 ms | 6.0 ms |
+| query_h1 | 4.0 ms | 4.5 ms | 3.1 ms | 4.4 ms | 3.3 ms | 4.7 ms | 3.2 ms | 4.4 ms |
+| querySelectorAll a | 30.6 ms | **505 ms** | 11.4 ms | **171 ms** | 11.3 ms | **226 ms** | 5.8 ms | **31.8 ms** |
+| screenshot | 159 ms | 218 ms | 294 ms | 311 ms | 296 ms | 346 ms | 48 ms | 70 ms |
+| dom_snapshot | 72 ms | 127 ms | 45 ms | 67 ms | 24 ms | 45 ms | 16 ms | 25 ms |
+| accessibility_tree | 66 ms | 154 ms | 18 ms | 38 ms | 21 ms | 45 ms | 5.0 ms | 10 ms |
+| cleaning_pipeline | 121 ms | 173 ms | 69 ms | 96 ms | 44 ms | 73 ms | 34 ms | 50 ms |
+
+Category totals across all 4 real websites:
+
+| Category | agent-cdp | Playwright | PW/acdp |
+|----------|-----------|------------|---------|
+| JS eval (5 ops) | 3.22s | 7.35s | **2.28x** |
+| DOM API (querySelector) | 3.91s | 49.05s | **12.56x** |
+| Content (HTML) | 11.73s | 14.33s | 1.22x |
+| Binary (screenshot) | 40.37s | 47.80s | 1.18x |
+| Specialized (snapshot + a11y) | 13.89s | 25.77s | **1.85x** |
+| Pipeline (5-step cleaning) | 14.20s | 19.73s | 1.39x |
+
+**Overall: Playwright is 1.88x slower than agent-cdp** (87.33s vs 164.03s total across 4 sites × 12 ops × 50 iterations).
+
+The DOM API gap scales with page complexity — Amazon's 5014-node DOM produces a **16.6x** gap on `querySelectorAll`, while Google's 594-node DOM shows **4.8x**. This is because Playwright creates an `ElementHandle` object per element with round-trip IPC, while agent-cdp returns raw `nodeId` arrays in a single CDP response.
+
+Reproduce: `uv run python -m demo.bench_agentcdp_vs_pw`
 
 ### Real-site watchdog latency
 
@@ -257,7 +310,7 @@ Tested on Google, Xiaohongshu, Bilibili, and reCAPTCHA Demo:
 | CDP `Page.navigate` round-trip | 232–910 ms | Raw CDP command |
 | Full page load (navigate + render) | 0.83–1.67 s | End-to-end |
 
-Reproduce: `uv run python -m demo.bench` and `uv run python -m demo.bench_cdp_vs_pw`
+Reproduce: `uv run python -m demo.bench`
 
 ## Action dispatch: using agent-cdp as an agent action executor
 

@@ -18,56 +18,12 @@ import random
 import time
 from typing import Any, ClassVar
 
-import websockets
 from pydantic import BaseModel
 
 from agent_cdp.connection import ConnectionType
 from agent_cdp.events import BaseEvent, EmitPolicy, event_results_list
 from agent_cdp.scope import ScopeGroup
-
-
-# ════════════════════════════════════════════════════════════════
-# CDP 客户端
-# ════════════════════════════════════════════════════════════════
-
-
-class CDPClient:
-    """最小 CDP WebSocket 客户端。"""
-
-    def __init__(self, ws_url: str) -> None:
-        self.ws_url = ws_url
-        self._ws: Any = None
-        self._id = 0
-
-    async def connect(self) -> None:
-        self._ws = await websockets.connect(self.ws_url, max_size=10 * 1024 * 1024)
-        await self.send('DOM.enable')
-        await self.send('Runtime.enable')
-        await self.send('Page.enable')
-
-    async def send(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        self._id += 1
-        msg = {'id': self._id, 'method': method, 'params': params or {}}
-        await self._ws.send(json.dumps(msg))
-        while True:
-            resp = json.loads(await self._ws.recv())
-            if resp.get('id') == self._id:
-                if 'error' in resp:
-                    raise RuntimeError(f"CDP error: {resp['error']}")
-                return resp.get('result', {})
-
-    async def evaluate(self, expression: str) -> Any:
-        result = await self.send('Runtime.evaluate', {
-            'expression': expression,
-            'returnByValue': True,
-            'awaitPromise': True,
-        })
-        return result.get('result', {}).get('value')
-
-    async def close(self) -> None:
-        if self._ws:
-            await self._ws.close()
-
+from demo.cdp_client import CDPClient
 
 cdp: CDPClient | None = None
 
@@ -324,6 +280,10 @@ async def main() -> None:
     print(f'\n[CDP] Connecting to {ws_url[:50]}...')
     cdp = CDPClient(ws_url)
     await cdp.connect()
+    # Enable CDP domains (the demo CDPClient doesn't auto-enable)
+    await cdp.send('DOM.enable')
+    await cdp.send('Runtime.enable')
+    await cdp.send('Page.enable')
     print('[CDP] Connected!')
 
     # ── 关掉登录弹窗 ──
@@ -402,49 +362,28 @@ async def main() -> None:
     ), 'D')
     await asyncio.sleep(1.5)
 
-    # ── E: 用 JS 精确点击"美食" ──
-    print('\n  [E] 精确定位并 stealth-click "美食" 标签...')
-    # 先获取"美食"的坐标
-    meishi_js = """
-    (() => {
-        const divs = document.querySelectorAll('div.channel');
-        for (const d of divs) {
-            if (d.textContent.trim() === '美食') {
-                const rect = d.getBoundingClientRect();
-                return JSON.stringify({x: rect.x + rect.width/2, y: rect.y + rect.height/2});
+    # ── E: 精确点击"美食"标签 — mark via DOM, then click via event system ──
+    # Step 1: Use ExtractDOMAction to find and mark the target element
+    await run_action(scope, ExtractDOMAction(
+        description='标记"美食"标签 (data-target)',
+        js_expression="""
+        (() => {
+            const divs = document.querySelectorAll('div.channel');
+            for (const d of divs) {
+                if (d.textContent.trim() === '美食') {
+                    d.setAttribute('data-target', 'meishi');
+                    return JSON.stringify({found: true, text: d.textContent.trim()});
+                }
             }
-        }
-        return null;
-    })()
-    """
-    raw = await cdp.evaluate(meishi_js)
-    if raw:
-        coords = json.loads(raw)
-        tx, ty = coords['x'], coords['y']
-        # 用 stealth trajectory 移动鼠标到目标
-        trajectory = _bezier_trajectory((random.uniform(100, 400), random.uniform(200, 400)), (tx, ty), steps=25)
-        for px, py in trajectory:
-            await cdp.send('Input.dispatchMouseEvent', {
-                'type': 'mouseMoved', 'x': px, 'y': py,
-                'button': 'none', 'timestamp': time.time(),
-            })
-            await asyncio.sleep(random.uniform(0.005, 0.02))
-        await asyncio.sleep(random.uniform(0.05, 0.1))
-        for etype in ('mousePressed', 'mouseReleased'):
-            await cdp.send('Input.dispatchMouseEvent', {
-                'type': etype, 'x': tx, 'y': ty,
-                'button': 'left', 'clickCount': 1, 'timestamp': time.time(),
-            })
-            if etype == 'mousePressed':
-                await asyncio.sleep(random.uniform(0.04, 0.08))
-        print(f'       → stealth click on "美食" at ({tx:.0f},{ty:.0f}) with {len(trajectory)}-pt trajectory')
-    else:
-        print('       → "美食" element not found, using JS click fallback')
-        await cdp.evaluate("""
-            document.querySelectorAll('div.channel').forEach(d => {
-                if (d.textContent.trim() === '美食') d.click();
-            });
-        """)
+            return JSON.stringify({found: false});
+        })()
+        """,
+    ), 'E-mark')
+    # Step 2: Click via event system — stealth_click handler applies bezier trajectory
+    await run_action(scope, ClickAction(
+        selector='[data-target="meishi"]',
+        description='stealth-click "美食" 标签',
+    ), 'E')
     await asyncio.sleep(2)
 
     # ── F: 提取美食分类下的笔记 ──
@@ -496,7 +435,7 @@ async def main() -> None:
     import base64
     with open('/tmp/xhs_final.png', 'wb') as f:
         f.write(base64.b64decode(screenshot['data']))
-    print(f'\n  Final screenshot saved: /tmp/xhs_final.png')
+    print('\n  Final screenshot saved: /tmp/xhs_final.png')
 
     await group.close_all()
     await cdp.close()

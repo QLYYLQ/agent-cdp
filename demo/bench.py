@@ -245,10 +245,7 @@ async def wait_for_load(cdp: CDPClient, session_id: str, timeout: float = 30.0) 
     except asyncio.TimeoutError:
         pass
     finally:
-        # Remove our handler
-        handlers = cdp._event_handlers.get('Page.loadEventFired', [])
-        if on_load in handlers:
-            handlers.remove(on_load)
+        cdp.off_event('Page.loadEventFired', on_load)
 
     return (time.perf_counter_ns() - t_start) / 1000.0
 
@@ -315,9 +312,7 @@ async def benchmark_site(
         tc.add('page load wait (timeout)', 'e2e', load_us, name)
         warn(f'Page load timed out (30s)')
     finally:
-        handlers = cdp._event_handlers.get('Page.loadEventFired', [])
-        if on_load in handlers:
-            handlers.remove(on_load)
+        cdp.off_event('Page.loadEventFired', on_load)
 
     # 4. Small settle delay for rendering
     await asyncio.sleep(0.5)
@@ -349,9 +344,7 @@ async def benchmark_site(
     popup_us = (time.perf_counter_ns() - t_popup_start) / 1000.0
     tc.add('popup inject+dismiss', 'e2e', popup_us, name)
 
-    handlers = cdp._event_handlers.get('Page.javascriptDialogOpening', [])
-    if on_dialog in handlers:
-        handlers.remove(on_dialog)
+    cdp.off_event('Page.javascriptDialogOpening', on_dialog)
 
     if popups.dismissed_dialogs:
         ok(f'Popup auto-dismissed: {fmt_us(popup_us)}')
@@ -445,7 +438,7 @@ async def run_bench() -> None:
         screenshot_wd = ScreenshotWatchdog(cdp)
         screenshot_wd.attach(scope, session_id)
 
-        ok('Watchdogs attached: Security(Direct,p=100), Popups(Direct,p=50), Screenshot(Queued)')
+        ok('Watchdogs attached: Security(Direct,p=100), Popups(Direct,p=100 + Queued,p=50), Screenshot(Queued)')
 
         output_dir = Path(__file__).parent / 'screenshots'
         output_dir.mkdir(exist_ok=True)
