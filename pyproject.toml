@@ -28,6 +28,9 @@ dependencies = [
     "uuid-utils>=0.9",
 ]
 
+[project.optional-dependencies]
+bench = ["playwright>=1.40"]
+
 [project.urls]
 Homepage = "https://github.com/QLYYLQ/agent-cdp"
 Repository = "https://github.com/QLYYLQ/agent-cdp"
