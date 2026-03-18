@@ -1,6 +1,70 @@
 [project]
 name = "agent-cdp"
 version = "0.1.0"
-description = ""
+description = "Scoped Event System for agent-era browser automation"
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.11"
-dependencies = []
+authors = [
+    { name = "QLYYLQ" },
+]
+keywords = ["browser-automation", "event-system", "cdp", "ai-agent", "browser-use", "watchdog", "scoped-events"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
+]
+dependencies = [
+    "pydantic>=2.0",
+    "conscribe>=0.4.0",
+    "uuid-utils>=0.9",
+]
+
+[project.urls]
+Homepage = "https://github.com/QLYYLQ/agent-cdp"
+Repository = "https://github.com/QLYYLQ/agent-cdp"
+Issues = "https://github.com/QLYYLQ/agent-cdp/issues"
+Documentation = "https://github.com/QLYYLQ/agent-cdp"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_cdp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "ASYNC"]
+ignore = ["ASYNC109"]  # timeout parameter name is part of the bubus-compatible API design
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+pythonVersion = "3.11"
+include = ["src"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+    "pyright>=1.1",
+    "anyio>=4.0",
+    "websockets>=13.0",
+]
