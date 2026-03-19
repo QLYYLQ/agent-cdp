@@ -16,8 +16,7 @@ import logging
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agent_cdp.connection.types import ConnectionType
-from agent_cdp.scope.scope import EventScope
+from agent_cdp import CDPEventBridge, ConnectionType, EventScope
 
 from .cdp_client import CDPClient
 from .events import (
@@ -105,13 +104,12 @@ class PopupsWatchdog:
 
     def __init__(self, cdp: CDPClient) -> None:
         self.cdp = cdp
-        self._scope: EventScope | None = None
         self._session_id: str | None = None
+        self._bridge: CDPEventBridge | None = None
         self.dismissed_dialogs: list[dict[str, str]] = []
 
     def attach(self, scope: EventScope, session_id: str) -> None:
         """Connect dual handlers and register CDP event bridge."""
-        self._scope = scope
         self._session_id = session_id
 
         # Direct handler (p=100): synchronous recording only
@@ -131,31 +129,16 @@ class PopupsWatchdog:
             priority=50,
         )
 
-        # CDP event bridge: Chrome → agent-cdp
-        self.cdp.on_event('Page.javascriptDialogOpening', self._on_cdp_dialog)
-
-    def _on_cdp_dialog(self, params: dict, session_id: str | None) -> None:
-        """CDP event callback — bridge Chrome dialog event to agent-cdp.
-
-        Filters by session_id so each tab's PopupsWatchdog only handles
-        dialogs from its own target. This prevents cross-tab interference
-        when multiple PopupsWatchdog instances share one CDPClient.
-        """
-        if self._scope is None:
-            return
-        if session_id is not None and self._session_id is not None and session_id != self._session_id:
-            return  # not our tab
-
-        target_id = session_id or 'unknown'
-        event = PopupDialogEvent(
-            dialog_type=params.get('type', 'alert'),
-            message=params.get('message', ''),
-            target_id=target_id,
+        # CDP event bridge: Chrome → agent-cdp (replaces manual on_event wiring)
+        self._bridge = CDPEventBridge(self.cdp, scope, session_id=session_id)
+        self._bridge.bridge(
+            'Page.javascriptDialogOpening',
+            lambda params: PopupDialogEvent(
+                dialog_type=params.get('type', 'alert'),
+                message=params.get('message', ''),
+                target_id=session_id,
+            ),
         )
-        try:
-            self._scope.emit(event)
-        except Exception:
-            logger.exception('Failed to emit PopupDialogEvent')
 
     def _record_dialog(self, event: PopupDialogEvent) -> None:
         """Direct handler (p=100) — synchronous recording only."""
@@ -237,34 +220,27 @@ class CrashWatchdog:
 
     def __init__(self, cdp: CDPClient) -> None:
         self.cdp = cdp
-        self._scope: EventScope | None = None
+        self._bridge: CDPEventBridge | None = None
         self.crash_events: list[str] = []
 
     def attach(self, scope: EventScope) -> None:
         """Connect crash handler and register CDP crash event bridge."""
-        self._scope = scope
+        self._bridge = CDPEventBridge(self.cdp, scope)
+        self._bridge.bridge(
+            'Target.targetCrashed',
+            lambda params: self._make_crash_event(params),
+        )
 
-        # CDP event bridge: Target.targetCrashed → BrowserErrorEvent
-        self.cdp.on_event('Target.targetCrashed', self._on_target_crashed)
-
-    def _on_target_crashed(self, params: dict, session_id: str | None) -> None:
-        """CDP callback — bridge crash event to agent-cdp."""
-        if self._scope is None:
-            return
-
+    def _make_crash_event(self, params: dict[str, str]) -> BrowserErrorEvent:
+        """Build a BrowserErrorEvent from CDP crash params."""
         target_id = params.get('targetId', 'unknown')
         error_text = params.get('errorCode', 'unknown crash')
         self.crash_events.append(target_id)
-
-        event = BrowserErrorEvent(
+        return BrowserErrorEvent(
             error_type='target_crashed',
             message=f'Tab {target_id} crashed: {error_text}',
             details=str(params),
         )
-        try:
-            self._scope.emit(event)
-        except Exception:
-            logger.exception('Failed to emit BrowserErrorEvent for crash')
 
 
 # ── NavigationHandler (not a watchdog, just a handler for the demo) ──

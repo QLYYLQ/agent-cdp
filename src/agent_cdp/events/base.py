@@ -31,6 +31,22 @@ class EmitPolicy(StrEnum):
     COLLECT_ERRORS = 'collect_errors'
 
 
+class EventTimeoutError(TimeoutError):
+    """Raised when ``await event`` exceeds *event_timeout*.
+
+    Inherits :class:`TimeoutError` so existing ``except TimeoutError`` clauses
+    catch it without changes.
+    """
+
+    def __init__(self, event_type: str, event_id: str, timeout: float) -> None:
+        self.event_type = event_type
+        self.event_id = event_id
+        self.timeout = timeout
+        super().__init__(
+            f'{event_type}(id={event_id[:12]}...) timed out after {timeout:.1f}s'
+        )
+
+
 def _make_set_event() -> asyncio.Event:
     """Born-set asyncio.Event. Zero-handler / pure-Direct scenarios: await event returns immediately."""
     e = asyncio.Event()
@@ -129,8 +145,28 @@ class BaseEvent(EventBridge, Generic[T_Result]):  # type: ignore[reportUntypedBa
     # ── Awaitable ──
 
     def __await__(self) -> Any:
-        """Allow `await event` to wait for all pending handlers to complete."""
-        return self._completion.wait().__await__()
+        """Allow ``await event`` to wait for all pending handlers to complete.
+
+        Respects *event_timeout*: raises :class:`EventTimeoutError` if the
+        pending count does not reach zero within the deadline.  Set
+        ``event_timeout=None`` for an indefinite wait.
+        """
+        return self._await_impl().__await__()
+
+    async def _await_impl(self) -> None:
+        if self._pending_count == 0:
+            return
+        if self.event_timeout is not None:
+            try:
+                await asyncio.wait_for(self._completion.wait(), timeout=self.event_timeout)
+            except TimeoutError:
+                raise EventTimeoutError(
+                    event_type=type(self).__name__,
+                    event_id=self.event_id,
+                    timeout=self.event_timeout,
+                ) from None
+        else:
+            await self._completion.wait()
 
     def __deepcopy__(self, memo: dict[int, Any]) -> 'BaseEvent[T_Result]':
         """Deep copy with independent asyncio.Event and reset pending count.

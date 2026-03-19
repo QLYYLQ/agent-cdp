@@ -32,11 +32,7 @@ if TYPE_CHECKING:
 
 from playwright.async_api import async_playwright
 
-from agent_cdp.connection.types import ConnectionType
-from agent_cdp.events.aggregation import event_result
-from agent_cdp.events.base import BaseEvent
-from agent_cdp.scope.group import ScopeGroup
-from agent_cdp.scope.scope import EventScope
+from agent_cdp import BaseEvent, ConnectionType, EventScope, ScopeGroup, event_result
 
 from .cdp_client import CDPClient
 from .chrome import kill_chrome, launch_chrome

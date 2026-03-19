@@ -17,9 +17,11 @@ import asyncio
 from collections.abc import Callable
 from typing import Any, TypeVar
 
+from agent_cdp.events.base import BaseEvent
 from agent_cdp.events.result import EventResult
 
 T = TypeVar('T')
+T_Result = TypeVar('T_Result')
 
 
 class HandlerError(Exception):
@@ -37,7 +39,7 @@ def _is_truthy(er: EventResult[Any]) -> bool:
     return er.is_success
 
 
-async def _wait_for_completion(event: Any, timeout: float | None = None) -> None:
+async def _wait_for_completion(event: BaseEvent[Any], timeout: float | None = None) -> None:
     """Wait for all pending handlers to complete.
 
     Fast-path when _pending_count == 0. Otherwise await with effective timeout
@@ -49,7 +51,7 @@ async def _wait_for_completion(event: Any, timeout: float | None = None) -> None
     await asyncio.wait_for(event._completion.wait(), timeout=effective_timeout)
 
 
-def _maybe_raise_errors(event: Any, raise_if_any: bool) -> None:
+def _maybe_raise_errors(event: BaseEvent[Any], raise_if_any: bool) -> None:
     """If raise_if_any, raise HandlerError wrapping the first error found."""
     if not raise_if_any:
         return
@@ -63,11 +65,11 @@ def _maybe_raise_errors(event: Any, raise_if_any: bool) -> None:
 
 
 async def event_result(
-    event: Any,
+    event: BaseEvent[T_Result],
     timeout: float | None = None,
     raise_if_any: bool = True,
     raise_if_none: bool = True,
-) -> Any:
+) -> T_Result | None:
     """Return the first non-None result from successful handlers.
 
     - raise_if_any: raise HandlerError if any handler errored
@@ -86,10 +88,10 @@ async def event_result(
 
 
 async def event_results_list(
-    event: Any,
+    event: BaseEvent[T_Result],
     timeout: float | None = None,
     raise_if_any: bool = True,
-) -> list[Any]:
+) -> list[T_Result]:
     """Return all non-None results from successful handlers, preserving insertion order."""
     await _wait_for_completion(event, timeout)
     _maybe_raise_errors(event, raise_if_any)
@@ -102,10 +104,10 @@ async def event_results_list(
 
 
 async def event_results_by_handler_name(
-    event: Any,
+    event: BaseEvent[T_Result],
     timeout: float | None = None,
     raise_if_any: bool = True,
-) -> dict[str, Any]:
+) -> dict[str, T_Result | None]:
     """Return results keyed by handler_name. Duplicate names: last-wins."""
     await _wait_for_completion(event, timeout)
     _maybe_raise_errors(event, raise_if_any)
@@ -118,7 +120,7 @@ async def event_results_by_handler_name(
 
 
 async def event_results_flat_dict(
-    event: Any,
+    event: BaseEvent[Any],
     timeout: float | None = None,
     raise_if_any: bool = True,
     raise_if_conflicts: bool = True,
@@ -147,7 +149,7 @@ async def event_results_flat_dict(
 
 
 async def event_results_flat_list(
-    event: Any,
+    event: BaseEvent[Any],
     timeout: float | None = None,
     raise_if_any: bool = True,
 ) -> list[Any]:
@@ -169,10 +171,10 @@ async def event_results_flat_list(
 
 
 async def event_results_filtered(
-    event: Any,
+    event: BaseEvent[T_Result],
     include: Callable[[EventResult[Any]], bool] = _is_truthy,
     timeout: float | None = None,
-) -> dict[str, EventResult[Any]]:
+) -> dict[str, EventResult[T_Result]]:
     """Return event_results filtered by predicate. Default: successful results only."""
     await _wait_for_completion(event, timeout)
 

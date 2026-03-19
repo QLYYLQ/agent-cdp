@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from agent_cdp._protocols import ScopeProtocol
 from agent_cdp.connection.types import ConnectionType
 from agent_cdp.events.base import BaseEvent
 
@@ -23,10 +24,10 @@ class Connection:
     """
 
     id: str
-    source_scope: weakref.ref[Any]  # weakref.ref[EventScope]
+    source_scope: weakref.ref[ScopeProtocol]
     event_type: type[BaseEvent[Any]]
     handler: Callable[..., Any]
-    target_scope: weakref.ref[Any] | None  # weakref.ref[EventScope] | None
+    target_scope: weakref.ref[ScopeProtocol] | None
     mode: ConnectionType
     filter: Callable[[BaseEvent[Any]], bool] | None
     priority: int
@@ -50,23 +51,23 @@ class Connection:
 
         # Notify source scope (may have been GC'd)
         source = self.source_scope()
-        if source is not None and hasattr(source, '_remove_connection'):
+        if source is not None:
             source._remove_connection(self)
 
         # Notify target scope (may have been GC'd or be None)
         if self.target_scope is not None:
             target = self.target_scope()
-            if target is not None and hasattr(target, '_remove_incoming'):
+            if target is not None:
                 target._remove_incoming(self)
 
 
 def connect(
-    source: Any,
+    source: ScopeProtocol,
     event_type: type[BaseEvent[Any]],
     handler: Callable[..., Any],
     *,
     mode: ConnectionType = ConnectionType.AUTO,
-    target_scope: Any | None = None,
+    target_scope: ScopeProtocol | None = None,
     priority: int = 0,
     filter: Callable[[BaseEvent[Any]], bool] | None = None,
 ) -> Connection:
@@ -105,11 +106,10 @@ def connect(
     )
 
     # Register on source scope
-    if hasattr(source, '_add_connection'):
-        source._add_connection(conn)
+    source._add_connection(conn)
 
     # Register on target scope
-    if target_scope is not None and hasattr(target_scope, '_add_incoming'):
+    if target_scope is not None:
         target_scope._add_incoming(conn)
 
     return conn

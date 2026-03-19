@@ -10,9 +10,9 @@ Provides nanosecond-precision measurement of:
 
 import time
 from collections import defaultdict
+from collections.abc import Generator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
-from typing import Generator
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)

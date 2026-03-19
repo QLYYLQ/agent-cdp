@@ -12,10 +12,9 @@ import asyncio
 import gc
 import time
 import weakref
+from typing import Any
 
 import pytest
-
-from typing import Any
 
 from agent_cdp.connection import ConnectionType
 from agent_cdp.events import BaseEvent

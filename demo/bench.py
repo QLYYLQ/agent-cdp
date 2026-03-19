@@ -14,10 +14,7 @@ import sys
 import time
 from pathlib import Path
 
-from agent_cdp.connection.types import ConnectionType
-from agent_cdp.events.aggregation import event_result
-from agent_cdp.scope.group import ScopeGroup
-from agent_cdp.scope.scope import EventScope
+from agent_cdp import ConnectionType, EventScope, ScopeGroup, event_result
 
 from .cdp_client import CDPClient
 from .chrome import kill_chrome, launch_chrome
@@ -242,7 +239,7 @@ async def wait_for_load(cdp: CDPClient, session_id: str, timeout: float = 30.0) 
     cdp.on_event('Page.loadEventFired', on_load)
     try:
         await asyncio.wait_for(load_event.wait(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pass
     finally:
         cdp.off_event('Page.loadEventFired', on_load)
@@ -307,10 +304,10 @@ async def benchmark_site(
         load_us = (time.perf_counter_ns() - t_load_start) / 1000.0
         tc.add('page load wait', 'e2e', load_us, name)
         ok(f'Page load: {fmt_us(load_us)}')
-    except asyncio.TimeoutError:
+    except TimeoutError:
         load_us = 30_000_000.0
         tc.add('page load wait (timeout)', 'e2e', load_us, name)
-        warn(f'Page load timed out (30s)')
+        warn('Page load timed out (30s)')
     finally:
         cdp.off_event('Page.loadEventFired', on_load)
 
@@ -338,7 +335,7 @@ async def benchmark_site(
             ),
             timeout=5.0,
         )
-    except (asyncio.TimeoutError, RuntimeError):
+    except (TimeoutError, RuntimeError):
         pass
 
     popup_us = (time.perf_counter_ns() - t_popup_start) / 1000.0
@@ -422,7 +419,7 @@ async def run_bench() -> None:
         await cdp.send('Page.enable', session_id=session_id)
         await cdp.send('Runtime.enable', session_id=session_id)
         await cdp.send('Network.enable', session_id=session_id)
-        ok(f'Attached to target, CDP domains enabled')
+        ok('Attached to target, CDP domains enabled')
 
         # Create scope and attach watchdogs
         group = ScopeGroup('bench')

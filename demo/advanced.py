@@ -27,12 +27,14 @@ import time
 from pathlib import Path
 from typing import Any
 
-from agent_cdp.advanced.event_log import EventLogWriter
-from agent_cdp.advanced.expect import expect
-from agent_cdp.connection.types import ConnectionType
-from agent_cdp.events.base import BaseEvent
-from agent_cdp.scope.group import ScopeGroup
-from agent_cdp.scope.scope import EventScope
+from agent_cdp import (
+    BaseEvent,
+    ConnectionType,
+    EventLogWriter,
+    EventScope,
+    ScopeGroup,
+    expect,
+)
 
 from .cdp_client import CDPClient
 from .chrome import kill_chrome, launch_chrome

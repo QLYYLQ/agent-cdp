@@ -147,7 +147,14 @@ class TestExpectAutoDisconnects:
 class TestHandlerTimeoutRecordsError:
     @pytest.mark.asyncio
     async def test_handler_timeout_records_error(self) -> None:
-        """Slow handler exceeding event_timeout records TimeoutError in EventResult."""
+        """Slow handler exceeding event_timeout records TimeoutError in EventResult.
+
+        With H4 enforcement, `await event` itself raises EventTimeoutError
+        when event_timeout expires. The per-handler timeout in ScopeEventLoop
+        records the TIMEOUT result on the EventResult before that deadline.
+        """
+        from agent_cdp.events.base import EventTimeoutError
+
         scope = EventScope('s1')
 
         async def slow_handler(event: ExpectNavEvent) -> str:
@@ -162,8 +169,12 @@ class TestHandlerTimeoutRecordsError:
 
         try:
             await scope._event_loop.start()
-            # Wait for the event to complete (timeout will fire)
-            await asyncio.wait_for(event, timeout=5.0)
+            # The event-level timeout (0.1s) fires before the handler completes.
+            # EventTimeoutError is the expected outcome.
+            try:
+                await asyncio.wait_for(event, timeout=5.0)
+            except EventTimeoutError:
+                pass  # Expected: event_timeout enforced by __await__
         finally:
             await scope._event_loop.stop()
 
@@ -197,9 +208,15 @@ class TestHandlerTimeoutDoesNotCrashLoop:
         event2 = ExpectNavEvent(url='https://fast.com', event_timeout=5.0)
         scope.emit(event2)
 
+        from agent_cdp.events.base import EventTimeoutError
+
         try:
             await scope._event_loop.start()
-            await asyncio.wait_for(event1, timeout=5.0)
+            # event1's event_timeout=0.1 fires via __await__ → EventTimeoutError
+            try:
+                await asyncio.wait_for(event1, timeout=5.0)
+            except EventTimeoutError:
+                pass  # Expected
             await asyncio.wait_for(event2, timeout=5.0)
         finally:
             await scope._event_loop.stop()

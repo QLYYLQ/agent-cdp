@@ -21,11 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from agent_cdp.connection.types import ConnectionType
-from agent_cdp.events.aggregation import event_result
-from agent_cdp.events.base import BaseEvent
-from agent_cdp.scope.group import ScopeGroup
-from agent_cdp.scope.scope import EventScope
+from agent_cdp import BaseEvent, ConnectionType, EventScope, ScopeGroup, event_result
 
 from .cdp_client import CDPClient
 from .chrome import kill_chrome, launch_chrome
@@ -142,7 +138,7 @@ async def navigate_and_wait(
     try:
         await cdp.send('Page.navigate', {'url': url}, session_id=session_id)
         await asyncio.wait_for(load_event.wait(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pass
     finally:
         cdp.off_event('Page.loadEventFired', on_load)
@@ -396,7 +392,7 @@ async def run_multi_tab() -> None:
                 ),
                 timeout=5.0,
             )
-        except (asyncio.TimeoutError, RuntimeError):
+        except (TimeoutError, RuntimeError):
             pass
 
         await asyncio.sleep(0.5)
@@ -523,7 +519,7 @@ async def run_multi_tab() -> None:
                 ok(f'{tab_label("Google")} scope alive after Bilibili closed (handler ran, CDP error expected)')
             else:
                 ok(f'{tab_label("Google")} still works after Bilibili closed (screenshot OK)')
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Event loop might need a kick after scope close
             ok(f'{tab_label("Google")} scope alive (emit accepted, handler queued)')
 

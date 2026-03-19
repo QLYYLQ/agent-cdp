@@ -18,8 +18,7 @@ import logging
 import sys
 from pathlib import Path
 
-from agent_cdp.events.aggregation import event_result
-from agent_cdp.scope.group import ScopeGroup
+from agent_cdp import ConnectionType, ScopeGroup, event_result
 
 from .cdp_client import CDPClient
 from .chrome import kill_chrome, launch_chrome
@@ -31,7 +30,6 @@ from .events import (
 )
 from .watchdogs import (
     CrashWatchdog,
-    NavigationCompleteEvent,
     PopupsWatchdog,
     ScreenshotWatchdog,
     SecurityWatchdog,
@@ -127,7 +125,7 @@ async def run_demo() -> None:
             target_id=target_id,
             session_id=session_id,
         )
-        ok(f'ScopeGroup "browser" + EventScope "tab-1" created (event loop running)')
+        ok('ScopeGroup "browser" + EventScope "tab-1" created (event loop running)')
 
         # Emit BrowserConnectedEvent
         tab_scope.emit(BrowserConnectedEvent(cdp_url=ws_url))
@@ -142,8 +140,6 @@ async def run_demo() -> None:
         security.attach(tab_scope)
 
         nav_handler = make_navigation_handler(cdp, session_id, tab_scope)
-        from agent_cdp.connection.types import ConnectionType
-
         tab_scope.connect(
             NavigateToUrlEvent,
             nav_handler,
@@ -331,14 +327,14 @@ async def run_demo() -> None:
         print(f'{GREEN}All phases passed. The scoped event system works correctly with real Chrome.{RESET}')
         print()
         print(f'{DIM}Key behaviors demonstrated:{RESET}')
-        print(f'  1. Direct dispatch: SecurityWatchdog blocked evil.com in emit() call stack')
-        print(f'  2. event.consume(): Stopped propagation before NavigationHandler ran')
-        print(f'  3. Priority ordering: Security (100) ran before Navigation (0)')
-        print(f'  4. Queued handlers: Screenshot capture ran async via event loop')
-        print(f'  5. CDP bridge: Chrome dialog events → PopupDialogEvent → auto-dismiss')
-        print(f'  6. Per-scope isolation: tab-1/tab-2 events independent')
-        print(f'  7. Broadcast: Single event delivered to all scopes (deep-copied)')
-        print(f'  8. Auto-disconnect: scope.close() severed all connections')
+        print('  1. Direct dispatch: SecurityWatchdog blocked evil.com in emit() call stack')
+        print('  2. event.consume(): Stopped propagation before NavigationHandler ran')
+        print('  3. Priority ordering: Security (100) ran before Navigation (0)')
+        print('  4. Queued handlers: Screenshot capture ran async via event loop')
+        print('  5. CDP bridge: Chrome dialog events → PopupDialogEvent → auto-dismiss')
+        print('  6. Per-scope isolation: tab-1/tab-2 events independent')
+        print('  7. Broadcast: Single event delivered to all scopes (deep-copied)')
+        print('  8. Auto-disconnect: scope.close() severed all connections')
         print()
 
     except Exception:

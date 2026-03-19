@@ -6,7 +6,6 @@ but are designed around our scoped connection topology.
 
 from agent_cdp.events import BaseEvent, EmitPolicy
 
-
 # ── Navigation ──
 
 
