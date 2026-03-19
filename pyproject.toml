@@ -1,6 +1,6 @@
 [project]
 name = "agent-cdp"
-version = "0.2.0"
+version = "0.3.0"
 description = "Scoped Event System for agent-era browser automation"
 readme = "README.md"
 license = "MIT"
@@ -45,7 +45,7 @@ build-backend = "hatchling.build"
 packages = ["src/agent_cdp"]
 
 [tool.hatch.build.targets.sdist]
-exclude = ["uv.lock", "demo/", "tests/", "other_framework/", "bu_ref/", "qt_ref/", ".claude/", "analysis/"]
+exclude = ["uv.lock", "demo/", "tests/", "other_framework/", "bu_ref/", "qt_ref/", ".claude/", "analysis/", ".github/"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -73,4 +73,6 @@ dev-dependencies = [
     "pyright>=1.1",
     "anyio>=4.0",
     "websockets>=13.0",
+    "build>=1.4.0",
+    "twine>=6.2.0",
 ]

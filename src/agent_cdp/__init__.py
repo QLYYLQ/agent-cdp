@@ -2,7 +2,7 @@
 
 from agent_cdp._watchdog_registry import WatchdogBase, WatchdogProtocol, WatchdogRegistrar
 from agent_cdp.advanced import EventLogWriter, expect
-from agent_cdp.bridge import CDPEventBridge
+from agent_cdp.bridge import CDPCommandProtocol, CDPEventBridge, PausedTarget
 from agent_cdp.connection import Connection, ConnectionType, connect
 from agent_cdp.events import (
     AsyncHandlerError,
@@ -48,7 +48,9 @@ __all__ = [
     'EventLogWriter',
     'expect',
     # CDP bridge
+    'CDPCommandProtocol',
     'CDPEventBridge',
+    'PausedTarget',
     # Watchdog registry
     'WatchdogBase',
     'WatchdogProtocol',

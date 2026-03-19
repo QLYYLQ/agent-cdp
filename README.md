@@ -151,6 +151,27 @@ tab.connect_all(circuit_breaker,
 
 Replace bubus's per-handler duplicated circuit-breaker wrappers with a single connection-level filter.
 
+### Race-free CDP setup with PausedTarget
+
+```python
+from agent_cdp.bridge import PausedTarget, CDPEventBridge
+
+# Guarantee: all bridges + handlers are wired BEFORE the target resumes
+async with PausedTarget(resume=my_resume_fn):
+    bridge = CDPEventBridge(cdp, scope, session_id='sess-A')
+    bridge.bridge('Page.loadEventFired', lambda p: PageLoadEvent(**p))
+    bridge.bridge('Page.javascriptDialogOpening', lambda p: DialogEvent(**p))
+    scope.connect(PageLoadEvent, on_load, mode=ConnectionType.DIRECT)
+    scope.connect(DialogEvent, on_dialog, mode=ConnectionType.DIRECT, priority=100)
+# resume called automatically — even if setup raises an exception
+
+# Or use the convenience factory:
+async with CDPEventBridge.paused(resume=my_resume_fn):
+    ...
+```
+
+No more race conditions between CDP event registration and page loading. `PausedTarget` coordinates the Stagehand V3 `waitForDebuggerOnStart` → pause → setup → resume pattern. Resume is idempotent and exception-safe.
+
 ### Awaitable events + expect()
 
 ```python
@@ -194,6 +215,7 @@ writer = EventLogWriter(path='events.jsonl')
 | Typed events | `BaseEvent[T]` | Untyped | `BaseEvent[T]` (preserved) |
 | Event awaiting | `await event` | Callbacks | `await event` + `expect()` |
 | Handler timeout | Per-handler | None | Per-handler + deadlock detection |
+| Pre-resume hook | None | None | `PausedTarget` context manager |
 | Event logging | JSONL WAL | None | JSONL EventLog + conscribe |
 | Broadcast | Event forwarding (shared ref) | N/A | Deep-copy broadcast |
 | Backpressure | Unbounded queue | N/A | Bounded queue (default 1024) |
@@ -524,9 +546,10 @@ Phase 9: Parallel Screenshots (all tabs)
 Reproduce all demos:
 
 ```bash
-uv run python -m demo.main        # single-tab scope advantages
-uv run python -m demo.multi_tab   # multi-tab isolation + captcha detection
-uv run python -m demo.advanced    # 8 architectural advantages with 5 tabs
+uv run python -m demo.main            # single-tab scope advantages
+uv run python -m demo.multi_tab       # multi-tab isolation + captcha detection
+uv run python -m demo.advanced        # 8 architectural advantages with 5 tabs
+uv run python -m demo.paused_target   # PausedTarget race-free setup (Amazon + Xiaohongshu)
 ```
 
 ## Installation
@@ -615,7 +638,10 @@ New in agent-cdp:
 ├── MRO-based event matching
 ├── connect_all() catch-all
 ├── Backpressure control (bounded queue, drop-newest)
-└── Direct handler timing monitor (>100ms warning)
+├── Direct handler timing monitor (>100ms warning)
+├── CDPEventBridge (CDP → EventScope bridging)
+├── CDPCommandProtocol (structural type for CDP clients)
+└── PausedTarget (race-free pause → setup → resume coordination)
 ```
 
 ## Development
@@ -624,7 +650,7 @@ New in agent-cdp:
 git clone https://github.com/QLYYLQ/agent-cdp.git
 cd agent-cdp
 uv sync
-uv run pytest -vxs tests/          # run all tests (185 tests)
+uv run pytest -vxs tests/          # run all tests (266 tests)
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run pyright                       # type check (strict mode)
 ```

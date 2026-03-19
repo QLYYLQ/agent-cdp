@@ -53,6 +53,9 @@ Source (EventScope) ──connect()──→ Handler    (Qt-style N:M connection
 | `Connection` | Explicit link between source scope + event type → handler. Has priority, optional filter, disconnect support |
 | `EventScope` | Isolated event processing domain with its own event loop. Maps to a browser tab, a monitoring channel, etc. |
 | `ScopeGroup` | Manages multiple scopes. Provides broadcast (global events to all scopes) and connect_all convenience |
+| `CDPEventBridge` | Bridges CDP events into an EventScope via event factories. Session-ID filtering, auto-cleanup on close |
+| `CDPCommandProtocol` | Structural type extending `CDPClientProtocol` with `async send()` for CDP command dispatch |
+| `PausedTarget` | Async context manager for race-free pause → setup → resume coordination (Stagehand V3 pattern) |
 
 ### Key Design Decisions
 
@@ -79,6 +82,7 @@ Source (EventScope) ──connect()──→ Handler    (Qt-style N:M connection
 | Handler priority | FIFO registration order | Integer priority on Connection |
 | Concurrency | Global single queue | Per-scope independent event loops |
 | Connection topology | N:1:M via central bus | N:M direct connections |
+| Pre-resume hook | None | `PausedTarget` context manager |
 
 ## Reference Materials
 
