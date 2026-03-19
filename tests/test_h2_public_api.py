@@ -14,7 +14,7 @@ class TestAllSymbolsImportable:
             assert obj is not None, f'{name} listed in __all__ but not importable'
 
     def test_all_count(self) -> None:
-        assert len(agent_cdp.__all__) == 20
+        assert len(agent_cdp.__all__) == 24
 
 
 class TestInternalNotInAll:

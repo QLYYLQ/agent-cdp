@@ -8,7 +8,7 @@
       → [QUEUED p=50]  StealthExecutor: 贝塞尔曲线鼠标轨迹 + 真实 CDP Input
       → [QUEUED p=0]   AuditLogger: 异步审计日志
 
-运行: uv run python demo_real_xhs.py
+运行: uv run python -m demo.real_xhs
 前提: Chrome --remote-debugging-port=9222 已启动并打开 xiaohongshu.com
 """
 
@@ -23,7 +23,8 @@ from pydantic import BaseModel
 from agent_cdp.connection import ConnectionType
 from agent_cdp.events import BaseEvent, EmitPolicy, event_results_list
 from agent_cdp.scope import ScopeGroup
-from demo.cdp_client import CDPClient
+
+from .cdp_client import CDPClient
 
 cdp: CDPClient | None = None
 

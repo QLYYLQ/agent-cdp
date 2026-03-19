@@ -1,9 +1,11 @@
 """agent-cdp: Scoped Event System for agent-era browser automation."""
 
+from agent_cdp._watchdog_registry import WatchdogBase, WatchdogProtocol, WatchdogRegistrar
 from agent_cdp.advanced import EventLogWriter, expect
 from agent_cdp.bridge import CDPEventBridge
 from agent_cdp.connection import Connection, ConnectionType, connect
 from agent_cdp.events import (
+    AsyncHandlerError,
     BaseEvent,
     EmitPolicy,
     EventResult,
@@ -21,6 +23,7 @@ from agent_cdp.scope import EventScope, ScopeGroup
 
 __all__ = [
     # Events
+    'AsyncHandlerError',
     'BaseEvent',
     'EmitPolicy',
     'EventResult',
@@ -46,4 +49,8 @@ __all__ = [
     'expect',
     # CDP bridge
     'CDPEventBridge',
+    # Watchdog registry
+    'WatchdogBase',
+    'WatchdogProtocol',
+    'WatchdogRegistrar',
 ]

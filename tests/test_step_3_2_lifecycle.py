@@ -25,6 +25,7 @@ async def _wait_event(event: BaseEvent[Any]) -> None:
     """Await an event's completion — avoids unhashable-type issue with asyncio.gather."""
     await event
 
+
 # ── Test event subclasses ──
 
 

@@ -164,6 +164,12 @@ class ScopeEventLoop:
             )
         except Exception as exc:
             _record(event, conn, error=exc)
+            logger.warning(
+                'Queued handler %s raised %s: %s',
+                handler_name,
+                type(exc).__name__,
+                exc,
+            )
         finally:
             deadlock_task.cancel()
             try:

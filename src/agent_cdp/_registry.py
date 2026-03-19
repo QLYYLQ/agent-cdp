@@ -25,6 +25,7 @@ EventRegistrar = create_registrar(
     protocol=EventProtocol,
     discriminator_field='event_type',
     strip_suffixes=['Event'],
+    key_separator='.',
 )
 
 EventBridge = EventRegistrar.bridge(BaseModel)  # type: ignore[reportUnknownVariableType,reportUnknownMemberType]

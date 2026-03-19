@@ -63,7 +63,9 @@ class TestScopeProtocol:
     def test_missing_method_rejects(self) -> None:
         class Incomplete:
             scope_id: str = 'x'
+
             def _add_connection(self, conn: Connection) -> None: ...
+
             # missing _remove_connection, _add_incoming, _remove_incoming
 
         assert not isinstance(Incomplete(), ScopeProtocol)

@@ -97,11 +97,15 @@ JS_HEADINGS = """(() => {
 class JSEvalEvent(BaseEvent[Any]):
     """JS evaluation via Runtime.evaluate."""
 
+    __registry_key__ = 'bench.js_eval'
+
     expression: str = ''
 
 
 class DOMQueryOneEvent(BaseEvent[str]):
     """querySelector + getOuterHTML."""
+
+    __registry_key__ = 'bench.dom_query_one'
 
     selector: str = ''
 
@@ -109,31 +113,33 @@ class DOMQueryOneEvent(BaseEvent[str]):
 class DOMQueryAllEvent(BaseEvent[int]):
     """querySelectorAll → count."""
 
+    __registry_key__ = 'bench.dom_query_all'
+
     selector: str = ''
 
 
 class ScreenshotBenchEvent(BaseEvent[int]):
     """Page.captureScreenshot → byte count."""
 
-    pass
+    __registry_key__ = 'bench.screenshot'
 
 
 class DOMSnapshotBenchEvent(BaseEvent[int]):
     """DOMSnapshot.captureSnapshot → document count."""
 
-    pass
+    __registry_key__ = 'bench.dom_snapshot'
 
 
 class A11yTreeBenchEvent(BaseEvent[int]):
     """Accessibility.getFullAXTree → node count."""
 
-    pass
+    __registry_key__ = 'bench.a11y_tree'
 
 
 class CleaningPipelineBenchEvent(BaseEvent[dict[str, int]]):
     """Full 5-step DOM extraction pipeline."""
 
-    pass
+    __registry_key__ = 'bench.cleaning_pipeline'
 
 
 # ── Data types ───────────────────────────────────────────────
@@ -277,21 +283,11 @@ class AgentCDPBench:
 
         # Connect all handlers as Queued (async CDP operations)
         scope.connect(JSEvalEvent, self._handle_js_eval, mode=ConnectionType.QUEUED, target_scope=scope)
-        scope.connect(
-            DOMQueryOneEvent, self._handle_dom_query_one, mode=ConnectionType.QUEUED, target_scope=scope
-        )
-        scope.connect(
-            DOMQueryAllEvent, self._handle_dom_query_all, mode=ConnectionType.QUEUED, target_scope=scope
-        )
-        scope.connect(
-            ScreenshotBenchEvent, self._handle_screenshot, mode=ConnectionType.QUEUED, target_scope=scope
-        )
-        scope.connect(
-            DOMSnapshotBenchEvent, self._handle_dom_snapshot, mode=ConnectionType.QUEUED, target_scope=scope
-        )
-        scope.connect(
-            A11yTreeBenchEvent, self._handle_a11y_tree, mode=ConnectionType.QUEUED, target_scope=scope
-        )
+        scope.connect(DOMQueryOneEvent, self._handle_dom_query_one, mode=ConnectionType.QUEUED, target_scope=scope)
+        scope.connect(DOMQueryAllEvent, self._handle_dom_query_all, mode=ConnectionType.QUEUED, target_scope=scope)
+        scope.connect(ScreenshotBenchEvent, self._handle_screenshot, mode=ConnectionType.QUEUED, target_scope=scope)
+        scope.connect(DOMSnapshotBenchEvent, self._handle_dom_snapshot, mode=ConnectionType.QUEUED, target_scope=scope)
+        scope.connect(A11yTreeBenchEvent, self._handle_a11y_tree, mode=ConnectionType.QUEUED, target_scope=scope)
         scope.connect(
             CleaningPipelineBenchEvent,
             self._handle_cleaning_pipeline,
@@ -509,15 +505,10 @@ def print_comparison(results: list[OpTiming], site: str) -> None:
         f'{"PW/acdp":>8}'
     )
     print(hdr)
-    print(
-        f'  {"─" * 22} {"─" * 10} {"─" * 10} {"─" * 11} '
-        f'{"─" * 10} {"─" * 10} {"─" * 11} {"─" * 8}'
-    )
+    print(f'  {"─" * 22} {"─" * 10} {"─" * 10} {"─" * 11} {"─" * 10} {"─" * 10} {"─" * 11} {"─" * 8}')
 
     for op_name, _, _ in OPERATIONS:
-        acdp_r = next(
-            (r for r in results if r.name == op_name and r.channel == 'agent-cdp' and r.site == site), None
-        )
+        acdp_r = next((r for r in results if r.name == op_name and r.channel == 'agent-cdp' and r.site == site), None)
         pw_r = next((r for r in results if r.name == op_name and r.channel == 'pw' and r.site == site), None)
         if not acdp_r or not pw_r:
             continue
@@ -551,10 +542,7 @@ def print_grand_total(results: list[OpTiming]) -> None:
         ratio = pw_total / acdp_total
         direction = 'slower' if ratio > 1 else 'faster'
         print(f'\n  {BOLD}Overall: Playwright is {ratio:.2f}x {direction} than agent-cdp{RESET}')
-        print(
-            f'  {DIM}(Total across {len(TEST_PAGES)} sites '
-            f'x {len(OPERATIONS)} ops x {ITERATIONS} iterations){RESET}'
-        )
+        print(f'  {DIM}(Total across {len(TEST_PAGES)} sites x {len(OPERATIONS)} ops x {ITERATIONS} iterations){RESET}')
 
     categories = {
         'JS eval': ['eval_title', 'eval_links', 'eval_text', 'eval_dom_stats', 'eval_interactive'],

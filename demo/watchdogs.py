@@ -1,7 +1,7 @@
 """Watchdogs migrated from browser-use to agent-cdp scoped event system.
 
-Each watchdog is a plain class with handler methods. Handlers are connected
-to scopes explicitly via scope.connect() — no global bus, no magic method naming.
+Each watchdog inherits from WatchdogBase (conscribe 0.5.3) for auto-registration
+and has a normalized ``attach(scope, session_id=None)`` signature.
 
 Key differences from browser-use:
 - SecurityWatchdog uses Direct mode + consume() instead of raise-through-bus
@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 from urllib.parse import urlparse
 
-from agent_cdp import CDPEventBridge, ConnectionType, EventScope
+from agent_cdp import CDPEventBridge, ConnectionType, EventScope, WatchdogBase
 
 from .cdp_client import CDPClient
 from .events import (
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # ── SecurityWatchdog ──────────────────────────────────────────────────────
 
 
-class SecurityWatchdog:
+class SecurityWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
     """Blocks navigation to disallowed domains.
 
     Uses Direct mode + high priority so it runs BEFORE any navigation handler.
@@ -49,7 +49,7 @@ class SecurityWatchdog:
     def __init__(self, allowed_domains: list[str] | None = None) -> None:
         self.allowed_domains = allowed_domains or []
 
-    def attach(self, scope: EventScope) -> None:
+    def attach(self, scope: EventScope, session_id: str | None = None) -> None:
         """Connect security check as Direct handler with high priority."""
         scope.connect(
             NavigateToUrlEvent,
@@ -90,7 +90,7 @@ class SecurityWatchdog:
 # ── PopupsWatchdog ──────────────────────────────────────────────────────
 
 
-class PopupsWatchdog:
+class PopupsWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
     """Auto-dismisses JavaScript dialogs (alert/confirm/prompt).
 
     Bridges CDP events → agent-cdp events → handler processing.
@@ -108,8 +108,11 @@ class PopupsWatchdog:
         self._bridge: CDPEventBridge | None = None
         self.dismissed_dialogs: list[dict[str, str]] = []
 
-    def attach(self, scope: EventScope, session_id: str) -> None:
+    def attach(self, scope: EventScope, session_id: str | None = None) -> None:
         """Connect dual handlers and register CDP event bridge."""
+        if session_id is None:
+            msg = 'PopupsWatchdog requires session_id'
+            raise ValueError(msg)
         self._session_id = session_id
 
         # Direct handler (p=100): synchronous recording only
@@ -142,10 +145,12 @@ class PopupsWatchdog:
 
     def _record_dialog(self, event: PopupDialogEvent) -> None:
         """Direct handler (p=100) — synchronous recording only."""
-        self.dismissed_dialogs.append({
-            'type': event.dialog_type,
-            'message': event.message,
-        })
+        self.dismissed_dialogs.append(
+            {
+                'type': event.dialog_type,
+                'message': event.message,
+            }
+        )
         logger.info(
             'PopupsWatchdog: recorded %s dialog: "%s"',
             event.dialog_type,
@@ -168,7 +173,7 @@ class PopupsWatchdog:
 # ── ScreenshotWatchdog ────────────────────────────────────────────────
 
 
-class ScreenshotWatchdog:
+class ScreenshotWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
     """Captures page screenshots via CDP.
 
     Uses Queued mode because Page.captureScreenshot is an async CDP operation.
@@ -180,8 +185,11 @@ class ScreenshotWatchdog:
         self.cdp = cdp
         self._session_id: str | None = None
 
-    def attach(self, scope: EventScope, session_id: str) -> None:
+    def attach(self, scope: EventScope, session_id: str | None = None) -> None:
         """Connect screenshot handler as Queued handler."""
+        if session_id is None:
+            msg = 'ScreenshotWatchdog requires session_id'
+            raise ValueError(msg)
         self._session_id = session_id
         scope.connect(
             ScreenshotEvent,
@@ -209,7 +217,7 @@ class ScreenshotWatchdog:
 # ── CrashWatchdog ─────────────────────────────────────────────────────
 
 
-class CrashWatchdog:
+class CrashWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
     """Monitors browser/tab health and emits BrowserErrorEvent on crash.
 
     Demonstrates:
@@ -223,7 +231,7 @@ class CrashWatchdog:
         self._bridge: CDPEventBridge | None = None
         self.crash_events: list[str] = []
 
-    def attach(self, scope: EventScope) -> None:
+    def attach(self, scope: EventScope, session_id: str | None = None) -> None:
         """Connect crash handler and register CDP crash event bridge."""
         self._bridge = CDPEventBridge(self.cdp, scope)
         self._bridge.bridge(
@@ -348,7 +356,7 @@ CAPTCHA_DETECT_JS = """
 """
 
 
-class CaptchaWatchdog:
+class CaptchaWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
     """Detects captcha elements in the DOM and emits CaptchaDetectedEvent.
 
     Unlike browser-use which relies on custom CDP events from a cloud proxy,
@@ -365,8 +373,11 @@ class CaptchaWatchdog:
         self._scope: EventScope | None = None
         self.last_detection: dict[str, object] | None = None
 
-    def attach(self, scope: EventScope, session_id: str) -> None:
+    def attach(self, scope: EventScope, session_id: str | None = None) -> None:
         """Connect captcha scan as Queued handler on NavigationCompleteEvent."""
+        if session_id is None:
+            msg = 'CaptchaWatchdog requires session_id'
+            raise ValueError(msg)
         self._scope = scope
         self._session_id = session_id
 

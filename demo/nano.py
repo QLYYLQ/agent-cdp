@@ -2,7 +2,7 @@
 
 只保留核心骨架，展示事件流是怎么走的。
 
-运行: uv run python demo_nano.py
+运行: uv run python -m demo.nano
 """
 
 import asyncio
@@ -11,7 +11,6 @@ from typing import ClassVar
 from agent_cdp.connection import ConnectionType
 from agent_cdp.events import BaseEvent, EmitPolicy, event_results_list
 from agent_cdp.scope import ScopeGroup
-
 
 # ── 1. 定义事件 ──
 

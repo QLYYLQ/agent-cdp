@@ -20,6 +20,7 @@ from pathlib import Path
 
 from agent_cdp import ConnectionType, ScopeGroup, event_result
 
+from ._output import DIM, GREEN, RESET, banner, fail, info, ok, phase
 from .cdp_client import CDPClient
 from .chrome import kill_chrome, launch_chrome
 from .events import (
@@ -36,39 +37,6 @@ from .watchdogs import (
     make_navigation_handler,
     save_screenshot,
 )
-
-# ── Output helpers ──
-
-BOLD = '\033[1m'
-GREEN = '\033[92m'
-RED = '\033[91m'
-YELLOW = '\033[93m'
-CYAN = '\033[96m'
-DIM = '\033[2m'
-RESET = '\033[0m'
-
-
-def banner(text: str) -> None:
-    print(f'\n{BOLD}{CYAN}{"═" * 60}')
-    print(f'  {text}')
-    print(f'{"═" * 60}{RESET}\n')
-
-
-def phase(num: int, text: str) -> None:
-    print(f'{BOLD}{YELLOW}Phase {num}: {text}{RESET}')
-
-
-def ok(text: str) -> None:
-    print(f'  {GREEN}✓{RESET} {text}')
-
-
-def fail(text: str) -> None:
-    print(f'  {RED}✗{RESET} {text}')
-
-
-def info(text: str) -> None:
-    print(f'  {DIM}→ {text}{RESET}')
-
 
 # ── Main demo ──
 
@@ -105,10 +73,13 @@ async def run_demo() -> None:
 
         # Attach to first page
         target_id = pages[0]['targetId']
-        attach_result = await cdp.send('Target.attachToTarget', {
-            'targetId': target_id,
-            'flatten': True,
-        })
+        attach_result = await cdp.send(
+            'Target.attachToTarget',
+            {
+                'targetId': target_id,
+                'flatten': True,
+            },
+        )
         session_id = attach_result['sessionId']
         ok(f'Attached to target {target_id[:12]}... → session {session_id[:12]}...')
 
@@ -229,10 +200,13 @@ async def run_demo() -> None:
         # Create a second tab via CDP
         new_target = await cdp.send('Target.createTarget', {'url': 'about:blank'})
         target_id_2 = new_target['targetId']
-        attach_2 = await cdp.send('Target.attachToTarget', {
-            'targetId': target_id_2,
-            'flatten': True,
-        })
+        attach_2 = await cdp.send(
+            'Target.attachToTarget',
+            {
+                'targetId': target_id_2,
+                'flatten': True,
+            },
+        )
         session_id_2 = attach_2['sessionId']
         await cdp.send('Page.enable', session_id=session_id_2)
 

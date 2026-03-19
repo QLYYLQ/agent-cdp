@@ -36,6 +36,7 @@ from agent_cdp import (
     expect,
 )
 
+from ._output import BOLD, DIM, RESET, banner, fail, info, ok, phase, pr, trace
 from .cdp_client import CDPClient
 from .chrome import kill_chrome, launch_chrome
 from .events import (
@@ -44,51 +45,6 @@ from .events import (
     NavigationCompleteEvent,
     ScreenshotEvent,
 )
-
-# ── Output helpers ───────────────────────────────────────────
-
-BOLD = '\033[1m'
-GREEN = '\033[92m'
-RED = '\033[91m'
-YELLOW = '\033[93m'
-CYAN = '\033[96m'
-DIM = '\033[2m'
-RESET = '\033[0m'
-
-# Use flush=True everywhere to avoid buffering issues
-_print = print
-
-
-def pr(*args: Any, **kwargs: Any) -> None:
-    _print(*args, **kwargs, flush=True)
-
-
-def banner(t: str) -> None:
-    pr(f'\n{BOLD}{CYAN}{"═" * 65}')
-    pr(f'  {t}')
-    pr(f'{"═" * 65}{RESET}\n')
-
-
-def phase(num: int, t: str) -> None:
-    pr(f'\n{BOLD}{YELLOW}Phase {num}: {t}{RESET}')
-
-
-def ok(t: str) -> None:
-    pr(f'  {GREEN}✓{RESET} {t}')
-
-
-def info(t: str) -> None:
-    pr(f'  {DIM}→ {t}{RESET}')
-
-
-def fail(t: str) -> None:
-    pr(f'  {RED}✗{RESET} {t}')
-
-
-def trace(entries: list[str]) -> None:
-    for entry in entries:
-        pr(f'    {DIM}{entry}{RESET}')
-
 
 # ── Real CDP handler factories ───────────────────────────────
 
@@ -123,7 +79,8 @@ def make_cdp_nav_handler(cdp: CDPClient, session_id: str, scope: EventScope, log
         load_done = asyncio.Event()
 
         def _on_load(params: dict[str, Any], sid: str | None) -> None:
-            load_done.set()
+            if sid == session_id:
+                load_done.set()
 
         cdp.on_event('Page.loadEventFired', _on_load)
         try:

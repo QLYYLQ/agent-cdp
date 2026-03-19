@@ -16,6 +16,7 @@ from pathlib import Path
 
 from agent_cdp import ConnectionType, EventScope, ScopeGroup, event_result
 
+from ._output import BOLD, DIM, GREEN, RESET, banner, fmt_us, info, ok, phase, warn
 from .cdp_client import CDPClient
 from .chrome import kill_chrome, launch_chrome
 from .events import (
@@ -55,48 +56,6 @@ SITES = [
         'domain': 'google.com',
     },
 ]
-
-# ── Output helpers ──
-
-BOLD = '\033[1m'
-GREEN = '\033[92m'
-RED = '\033[91m'
-YELLOW = '\033[93m'
-CYAN = '\033[96m'
-DIM = '\033[2m'
-RESET = '\033[0m'
-
-
-def banner(text: str) -> None:
-    print(f'\n{BOLD}{CYAN}{"═" * 65}')
-    print(f'  {text}')
-    print(f'{"═" * 65}{RESET}\n')
-
-
-def phase(text: str) -> None:
-    print(f'\n{BOLD}{YELLOW}── {text} {"─" * max(1, 55 - len(text))}{RESET}')
-
-
-def ok(text: str) -> None:
-    print(f'  {GREEN}✓{RESET} {text}')
-
-
-def info(text: str) -> None:
-    print(f'  {DIM}→ {text}{RESET}')
-
-
-def warn(text: str) -> None:
-    print(f'  {YELLOW}!{RESET} {text}')
-
-
-def fmt_us(us: float) -> str:
-    """Format microseconds to human-readable."""
-    if us < 1000:
-        return f'{us:.1f}us'
-    elif us < 1_000_000:
-        return f'{us / 1000:.2f}ms'
-    else:
-        return f'{us / 1_000_000:.2f}s'
 
 
 # ── Framework overhead measurements ──
@@ -410,10 +369,13 @@ async def run_bench() -> None:
         pages = [t for t in targets.get('targetInfos', []) if t.get('type') == 'page']
         target_id = pages[0]['targetId']
 
-        attach = await cdp.send('Target.attachToTarget', {
-            'targetId': target_id,
-            'flatten': True,
-        })
+        attach = await cdp.send(
+            'Target.attachToTarget',
+            {
+                'targetId': target_id,
+                'flatten': True,
+            },
+        )
         session_id = attach['sessionId']
 
         await cdp.send('Page.enable', session_id=session_id)
@@ -443,8 +405,15 @@ async def run_bench() -> None:
         # ── Per-site benchmarks ──
         for site in SITES:
             await benchmark_site(
-                site, cdp, session_id, scope,
-                security, popups, screenshot_wd, tc, output_dir,
+                site,
+                cdp,
+                session_id,
+                scope,
+                security,
+                popups,
+                screenshot_wd,
+                tc,
+                output_dir,
             )
 
         # ── Cleanup ──

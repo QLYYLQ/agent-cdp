@@ -15,7 +15,7 @@ from agent_cdp._registry import EventRegistrar
 from agent_cdp.advanced.cycle_detect import _MAX_DIRECT_DEPTH
 from agent_cdp.connection.connection import Connection, connect
 from agent_cdp.connection.types import ConnectionType
-from agent_cdp.events.base import BaseEvent, EmitPolicy
+from agent_cdp.events.base import AsyncHandlerError, BaseEvent, EmitPolicy
 from agent_cdp.scope._helpers import _record, get_handler_name
 from agent_cdp.scope.event_loop import ScopeEventLoop
 
@@ -167,8 +167,18 @@ class EventScope:
                     continue
 
                 # Apply connection-level filter
-                if conn.filter is not None and not conn.filter(event):
-                    continue
+                if conn.filter is not None:
+                    try:
+                        if not conn.filter(event):
+                            continue
+                    except Exception:
+                        logger.warning(
+                            'Connection filter for %s raised on scope %r — skipping',
+                            get_handler_name(conn.handler),
+                            self.scope_id,
+                            exc_info=True,
+                        )
+                        continue
 
                 effective_mode = self._resolve_mode(conn)
 
@@ -196,6 +206,23 @@ class EventScope:
 
         return event
 
+    async def emit_and_wait(
+        self,
+        event: BaseEvent[Any],
+        *,
+        timeout: float | None = None,
+    ) -> BaseEvent[Any]:
+        """Emit an event and ``await`` it in one call.
+
+        Convenience wrapper that eliminates the common ``emit(); await event``
+        two-step pattern seen in demo code. Optionally overrides *event_timeout*.
+        """
+        if timeout is not None:
+            event.event_timeout = timeout
+        self.emit(event)
+        await event
+        return event
+
     # ── Internal dispatch ──
 
     def _dispatch_direct(
@@ -214,7 +241,7 @@ class EventScope:
             # Detect async handler returning coroutine
             if asyncio.iscoroutine(result):
                 result.close()  # avoid RuntimeWarning
-                err = TypeError(
+                err = AsyncHandlerError(
                     f'Direct handler {handler_name} returned a coroutine; use ConnectionType.QUEUED for async handlers'
                 )
                 _record(event, conn, error=err)
@@ -224,7 +251,7 @@ class EventScope:
 
             # Detect other awaitables
             if inspect.isawaitable(result):
-                err = TypeError(
+                err = AsyncHandlerError(
                     f'Direct handler {handler_name} returned an awaitable; use ConnectionType.QUEUED for async handlers'
                 )
                 _record(event, conn, error=err)
@@ -234,8 +261,8 @@ class EventScope:
 
             _record(event, conn, result=result)
 
-        except TypeError:
-            # Re-raise TypeErrors from async detection (already recorded above)
+        except AsyncHandlerError:
+            # Re-raise AsyncHandlerErrors from async detection (already recorded above)
             raise
         except Exception as exc:
             _record(event, conn, error=exc)

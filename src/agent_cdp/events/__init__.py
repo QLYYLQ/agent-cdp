@@ -9,10 +9,11 @@ from agent_cdp.events.aggregation import (
     event_results_flat_list,
     event_results_list,
 )
-from agent_cdp.events.base import BaseEvent, EmitPolicy, EventTimeoutError
+from agent_cdp.events.base import AsyncHandlerError, BaseEvent, EmitPolicy, EventTimeoutError
 from agent_cdp.events.result import EventResult, ResultStatus
 
 __all__ = [
+    'AsyncHandlerError',
     'BaseEvent',
     'EmitPolicy',
     'EventResult',

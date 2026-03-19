@@ -42,9 +42,15 @@ class EventTimeoutError(TimeoutError):
         self.event_type = event_type
         self.event_id = event_id
         self.timeout = timeout
-        super().__init__(
-            f'{event_type}(id={event_id[:12]}...) timed out after {timeout:.1f}s'
-        )
+        super().__init__(f'{event_type}(id={event_id[:12]}...) timed out after {timeout:.1f}s')
+
+
+class AsyncHandlerError(TypeError):
+    """Raised when a Direct handler returns a coroutine or awaitable.
+
+    Sentinel subclass so scope._dispatch_direct can catch *only* its own
+    async-detection TypeErrors without swallowing user handler TypeErrors.
+    """
 
 
 def _make_set_event() -> asyncio.Event:

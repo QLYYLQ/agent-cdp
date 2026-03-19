@@ -29,7 +29,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "conscribe", specifier = ">=0.4.0" },
+    { name = "conscribe", specifier = ">=0.5.3" },
     { name = "playwright", marker = "extra == 'bench'", specifier = ">=1.40" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "uuid-utils", specifier = ">=0.9" },
@@ -79,14 +79,14 @@ wheels = [
 
 [[package]]
 name = "conscribe"
-version = "0.4.1"
+version = "0.5.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b1/5d/5242b1a646a25947a890baa4e4cbda284036999a71fe864bc27d0d15347f/conscribe-0.4.1.tar.gz", hash = "sha256:bd070417be9f757a34e75d1cc441e4a59c28010e58a9a40a9d737d94758e1845", size = 195074, upload-time = "2026-03-16T22:09:42.486Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0c/f6/6d8772b4f7a4eee00b7fc5b0f489b7aef848b6590c63a7c8c7a2932945de/conscribe-0.5.3.tar.gz", hash = "sha256:516ca09c49995f0a81b8fc9af25d657b4e91eb7f84f13b920fbf70b8c6a135e7", size = 41592, upload-time = "2026-03-19T16:56:03.596Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f5/0a/d371cda8fbebcc2827a507c9a85e263d8d6770ca0bb9396aa6562150ee17/conscribe-0.4.1-py3-none-any.whl", hash = "sha256:9d93f678deaae0c232c0b1539b8915c42de2773d852a40ec68b1e56f23c2c1ac", size = 66460, upload-time = "2026-03-16T22:09:40.967Z" },
+    { url = "https://files.pythonhosted.org/packages/39/36/66af0d1d1ef0272f7f09e24d3aae1a5ed747113229687ff2789ee3f331ac/conscribe-0.5.3-py3-none-any.whl", hash = "sha256:45353ecd4198db5e5810d4a2ed75e678b25c5ae3c35e93f7a7a87b91717f1bfb", size = 54558, upload-time = "2026-03-19T16:56:02.345Z" },
 ]
 
 [[package]]

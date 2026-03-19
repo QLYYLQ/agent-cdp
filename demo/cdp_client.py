@@ -86,9 +86,7 @@ class CDPClient:
                     future = self._pending.pop(msg['id'], None)
                     if future and not future.done():
                         if 'error' in msg:
-                            future.set_exception(
-                                RuntimeError(msg['error'].get('message', str(msg['error'])))
-                            )
+                            future.set_exception(RuntimeError(msg['error'].get('message', str(msg['error']))))
                         else:
                             future.set_result(msg.get('result', {}))
                 elif 'method' in msg:

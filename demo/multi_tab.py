@@ -23,6 +23,7 @@ from typing import Any
 
 from agent_cdp import BaseEvent, ConnectionType, EventScope, ScopeGroup, event_result
 
+from ._output import BOLD, DIM, GREEN, RESET, YELLOW, banner, fail, fmt_us, info, ok, phase, tab_label
 from .cdp_client import CDPClient
 from .chrome import kill_chrome, launch_chrome
 from .events import (
@@ -56,52 +57,6 @@ TABS = [
 
 TABS_NAMES = [t['name'] for t in TABS]
 
-# ── Output helpers ──
-
-BOLD = '\033[1m'
-GREEN = '\033[92m'
-RED = '\033[91m'
-YELLOW = '\033[93m'
-CYAN = '\033[96m'
-MAGENTA = '\033[95m'
-DIM = '\033[2m'
-RESET = '\033[0m'
-
-
-def banner(text: str) -> None:
-    print(f'\n{BOLD}{CYAN}{"═" * 65}')
-    print(f'  {text}')
-    print(f'{"═" * 65}{RESET}\n')
-
-
-def phase(num: int, text: str) -> None:
-    print(f'\n{BOLD}{YELLOW}Phase {num}: {text}{RESET}')
-
-
-def ok(text: str) -> None:
-    print(f'  {GREEN}✓{RESET} {text}')
-
-
-def fail(text: str) -> None:
-    print(f'  {RED}✗{RESET} {text}')
-
-
-def info(text: str) -> None:
-    print(f'  {DIM}→ {text}{RESET}')
-
-
-def tab_label(name: str) -> str:
-    return f'{MAGENTA}[{name}]{RESET}'
-
-
-def fmt_us(us: float) -> str:
-    if us < 1000:
-        return f'{us:.1f}µs'
-    elif us < 1_000_000:
-        return f'{us / 1000:.2f}ms'
-    else:
-        return f'{us / 1_000_000:.2f}s'
-
 
 # ── Tab session setup ──
 
@@ -111,10 +66,13 @@ async def create_tab(cdp: CDPClient, url: str = 'about:blank') -> tuple[str, str
     result = await cdp.send('Target.createTarget', {'url': url})
     target_id = result['targetId']
 
-    attach = await cdp.send('Target.attachToTarget', {
-        'targetId': target_id,
-        'flatten': True,
-    })
+    attach = await cdp.send(
+        'Target.attachToTarget',
+        {
+            'targetId': target_id,
+            'flatten': True,
+        },
+    )
     session_id = attach['sessionId']
 
     await cdp.send('Page.enable', session_id=session_id)
@@ -124,7 +82,10 @@ async def create_tab(cdp: CDPClient, url: str = 'about:blank') -> tuple[str, str
 
 
 async def navigate_and_wait(
-    cdp: CDPClient, session_id: str, url: str, timeout: float = 30.0,
+    cdp: CDPClient,
+    session_id: str,
+    url: str,
+    timeout: float = 30.0,
 ) -> float:
     """Navigate to URL and wait for load. Returns load time in µs."""
     load_event = asyncio.Event()
@@ -398,11 +359,7 @@ async def run_multi_tab() -> None:
         await asyncio.sleep(0.5)
 
         google_popups = popups_per_tab['Google'].dismissed_dialogs
-        other_popups = {
-            name: pw.dismissed_dialogs
-            for name, pw in popups_per_tab.items()
-            if name != 'Google'
-        }
+        other_popups = {name: pw.dismissed_dialogs for name, pw in popups_per_tab.items() if name != 'Google'}
 
         if google_popups:
             ok(f'{tab_label("Google")} popup dismissed: "{google_popups[-1].get("message")}"')
@@ -418,10 +375,12 @@ async def run_multi_tab() -> None:
                     fail(f'{tab_label(name)} unexpectedly saw popup: {dialogs}')
 
         # Also verify via popup_scopes_seen
-        info(f'Popup observer: Google={len(popup_scopes_seen["Google"])}, '
-             f'Bilibili={len(popup_scopes_seen["Bilibili"])}, '
-             f'Xiaohongshu={len(popup_scopes_seen["Xiaohongshu"])}, '
-             f'reCAPTCHA={len(popup_scopes_seen["reCAPTCHA"])}')
+        info(
+            f'Popup observer: Google={len(popup_scopes_seen["Google"])}, '
+            f'Bilibili={len(popup_scopes_seen["Bilibili"])}, '
+            f'Xiaohongshu={len(popup_scopes_seen["Xiaohongshu"])}, '
+            f'reCAPTCHA={len(popup_scopes_seen["reCAPTCHA"])}'
+        )
 
         # ══════════════════════════════════════════════════════
         phase(8, 'Broadcast Event → All Tabs')
@@ -437,11 +396,13 @@ async def run_multi_tab() -> None:
             )
 
         with tc.measure('broadcast to 4 scopes', 'framework', '__global__'):
-            copies = group.broadcast(GlobalMonitorEvent(
-                source_scope_id='controller',
-                event_name='health_check',
-                details='ping',
-            ))
+            copies = group.broadcast(
+                GlobalMonitorEvent(
+                    source_scope_id='controller',
+                    event_name='health_check',
+                    details='ping',
+                )
+            )
 
         bc_time = tc.records[-1].duration_us
         ok(f'Broadcast sent to {len(copies)} scopes ({fmt_us(bc_time)})')
@@ -510,10 +471,7 @@ async def run_multi_tab() -> None:
             await asyncio.wait_for(_wait_event(test_ev), timeout=10.0)
             # Check if handler succeeded
             results = test_ev.event_results
-            has_error = any(
-                hasattr(r, 'error') and r.error is not None
-                for r in results.values()
-            )
+            has_error = any(hasattr(r, 'error') and r.error is not None for r in results.values())
             if has_error:
                 # Handler ran but CDP failed (e.g. session invalidated) — still proves scope works
                 ok(f'{tab_label("Google")} scope alive after Bilibili closed (handler ran, CDP error expected)')

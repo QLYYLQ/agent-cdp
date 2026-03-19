@@ -3,7 +3,7 @@
 核心机制: handler 的 return 值自动写入 event.event_results，
 Agent 通过 await event + 聚合函数取回。
 
-运行: uv run python demo_feedback.py
+运行: uv run python -m demo.feedback
 """
 
 import asyncio
@@ -20,7 +20,6 @@ from agent_cdp.events import (
     event_results_list,
 )
 from agent_cdp.scope import ScopeGroup
-
 
 # ── 定义结果类型 ──
 
@@ -104,7 +103,7 @@ async def main() -> None:
     # 方式 4: event.event_results[conn.id] — 用 connection id 精确取
     # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     er = event.event_results[c2.id]  # c2 = stealth_executor 的连接
-    print(f'方式4 event_results[conn.id]:')
+    print('方式4 event_results[conn.id]:')
     print(f'  → result:       {er.result}')
     print(f'  → status:       {er.status}')
     print(f'  → handler_name: {er.handler_name}')

@@ -5,21 +5,19 @@
 2. 反检测执行器 handler（DIRECT, priority=50）— 模拟鼠标轨迹后点击
 3. 审计日志 handler（QUEUED, priority=0）— 异步记录操作日志
 
-运行: uv run python demo_action_dispatch.py
+运行: uv run python -m demo.action_dispatch
 """
 
 import asyncio
-import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import ClassVar
 
 from pydantic import BaseModel
 
-from agent_cdp.connection import ConnectionType, connect
-from agent_cdp.events import BaseEvent, EmitPolicy, event_result, event_results_list
+from agent_cdp.connection import ConnectionType
+from agent_cdp.events import BaseEvent, EmitPolicy, event_results_list
 from agent_cdp.scope import EventScope, ScopeGroup
-
 
 # ╔══════════════════════════════════════════════════════════════════╗
 # ║ 第一部分：定义 Action Events（Agent → Browser 方向）             ║
@@ -86,7 +84,7 @@ def security_check(event: BrowserAction) -> ActionResult:
 
     if isinstance(event, TypeAction) and '<script>' in event.text.lower():
         event.consume()
-        raise SecurityViolation(f'Blocked XSS injection attempt in TypeAction')
+        raise SecurityViolation('Blocked XSS injection attempt in TypeAction')
 
     return ActionResult(success=True, detail='security check passed')
 
