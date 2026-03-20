@@ -24,10 +24,17 @@ class CDPClient:
         self._pending: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._event_handlers: dict[str, list[Callable[..., Any]]] = {}
         self._recv_task: asyncio.Task[None] | None = None
+        self._connected = False
+
+    @property
+    def is_connected(self) -> bool:
+        """Whether the WebSocket connection is open and the receive loop is running."""
+        return self._connected and self._ws is not None
 
     async def connect(self) -> None:
         self._ws = await websockets.connect(self.ws_url, max_size=50 * 1024 * 1024)
         self._recv_task = asyncio.create_task(self._recv_loop())
+        self._connected = True
 
     async def send(
         self,
@@ -99,11 +106,13 @@ class CDPClient:
                         except Exception:
                             logger.exception('CDP event handler error for %s', msg['method'])
         except websockets.ConnectionClosed:
+            self._connected = False
             logger.info('CDP WebSocket closed')
         except asyncio.CancelledError:
             pass
 
     async def close(self) -> None:
+        self._connected = False
         if self._recv_task:
             self._recv_task.cancel()
             try:

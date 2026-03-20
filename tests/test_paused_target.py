@@ -44,11 +44,15 @@ class FakeCDPClient:
 
 
 class FakeCDPCommandClient(FakeCDPClient):
-    """CDP client satisfying CDPCommandProtocol (adds send())."""
+    """CDP client satisfying CDPCommandProtocol (adds send() + is_connected)."""
 
     def __init__(self) -> None:
         super().__init__()
         self.sent_commands: list[tuple[str, dict[str, Any] | None]] = []
+
+    @property
+    def is_connected(self) -> bool:
+        return True
 
     async def send(self, method: str, params: dict[str, Any] | None = None) -> Any:
         self.sent_commands.append((method, params))

@@ -28,6 +28,9 @@ class CDPClientProtocol(Protocol):
 class CDPCommandProtocol(CDPClientProtocol, Protocol):
     """CDP client that supports both event subscription and command sending."""
 
+    @property
+    def is_connected(self) -> bool: ...
+
     async def send(self, method: str, params: dict[str, Any] | None = None) -> Any: ...
 
 
@@ -134,6 +137,7 @@ class CDPEventBridge:
         self._scope = scope
         self._session_id = session_id
         self._registrations: list[tuple[str, Callable[..., Any]]] = []
+        self._hit_counts: dict[str, int] = {}
         self._closed = False
 
     def bridge(
@@ -150,12 +154,16 @@ class CDPEventBridge:
             msg = 'Cannot bridge on a closed CDPEventBridge'
             raise RuntimeError(msg)
 
+        self._hit_counts[cdp_method] = 0
+
         def _callback(params: dict[str, Any], session_id: str | None = None) -> None:
             # Session-ID filtering — check callback arg first, then params dict
             if self._session_id is not None:
                 incoming_sid = session_id or params.get('sessionId')
                 if incoming_sid is not None and incoming_sid != self._session_id:
                     return
+
+            self._hit_counts[cdp_method] += 1
 
             try:
                 event = event_factory(params)
@@ -171,11 +179,31 @@ class CDPEventBridge:
         self._cdp.on_event(cdp_method, _callback)
         self._registrations.append((cdp_method, _callback))
 
+    @property
+    def hit_counts(self) -> dict[str, int]:
+        """Per-method hit counts. Useful for diagnostics and testing."""
+        return dict(self._hit_counts)
+
     def close(self) -> None:
-        """Remove all CDP callbacks registered by this bridge. Idempotent."""
+        """Remove all CDP callbacks registered by this bridge. Idempotent.
+
+        Logs a warning for any bridged method that never received an event
+        (zero-hit report) — helps detect silent misconfigurations like
+        ``Browser.*`` on a page-level WebSocket.
+        """
         if self._closed:
             return
         self._closed = True
+
+        zero_hit = [m for m, c in self._hit_counts.items() if c == 0]
+        if zero_hit:
+            logger.warning(
+                'CDPEventBridge(%s): zero-hit methods (never fired): %s — '
+                'verify these CDP domains are enabled and reachable on this connection',
+                self._scope.scope_id,
+                zero_hit,
+            )
+
         for method, callback in self._registrations:
             self._cdp.off_event(method, callback)
         self._registrations.clear()

@@ -31,6 +31,7 @@ async def launch_chrome(port: int = 9222) -> tuple[subprocess.Popen[bytes], str]
         '--disable-background-timer-throttling',
         '--disable-renderer-backgrounding',
         '--disable-backgrounding-occluded-windows',
+        '--window-size=1280,800',
         'about:blank',
     ]
     logger.info('Launching Chrome: %s', ' '.join(args))

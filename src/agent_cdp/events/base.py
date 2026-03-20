@@ -36,13 +36,47 @@ class EventTimeoutError(TimeoutError):
 
     Inherits :class:`TimeoutError` so existing ``except TimeoutError`` clauses
     catch it without changes.
+
+    Diagnostic attributes beyond the basic triple:
+
+    - ``pending_count``: number of handlers that never completed.
+    - ``completed_handlers``: names of handlers that finished successfully.
+    - ``failed_handlers``: names of handlers that raised (non-timeout).
+    - ``timed_out_handlers``: names of handlers that individually timed out.
     """
 
-    def __init__(self, event_type: str, event_id: str, timeout: float) -> None:
+    def __init__(
+        self,
+        event_type: str,
+        event_id: str,
+        timeout: float,
+        *,
+        pending_count: int = 0,
+        completed_handlers: list[str] | None = None,
+        failed_handlers: list[str] | None = None,
+        timed_out_handlers: list[str] | None = None,
+    ) -> None:
         self.event_type = event_type
         self.event_id = event_id
         self.timeout = timeout
-        super().__init__(f'{event_type}(id={event_id[:12]}...) timed out after {timeout:.1f}s')
+        self.pending_count = pending_count
+        self.completed_handlers = completed_handlers or []
+        self.failed_handlers = failed_handlers or []
+        self.timed_out_handlers = timed_out_handlers or []
+        super().__init__(self._build_message())
+
+    def _build_message(self) -> str:
+        parts = [f'{self.event_type}(id={self.event_id[:12]}...) timed out after {self.timeout:.1f}s']
+        parts.append(f'{self.pending_count} handler(s) still pending')
+        if self.completed_handlers:
+            parts.append(f'completed: {self.completed_handlers}')
+        if self.failed_handlers:
+            parts.append(f'failed: {self.failed_handlers}')
+        if self.timed_out_handlers:
+            parts.append(f'timed_out: {self.timed_out_handlers}')
+        if not self.completed_handlers and not self.failed_handlers and not self.timed_out_handlers:
+            parts.append('no handlers responded')
+        return '; '.join(parts)
 
 
 class AsyncHandlerError(TypeError):
@@ -170,9 +204,32 @@ class BaseEvent(EventBridge, Generic[T_Result]):  # type: ignore[reportUntypedBa
                     event_type=type(self).__name__,
                     event_id=self.event_id,
                     timeout=self.event_timeout,
+                    **self._timeout_diagnostics(),
                 ) from None
         else:
             await self._completion.wait()
+
+    def _timeout_diagnostics(self) -> dict[str, Any]:
+        """Gather diagnostic info from event_results for the timeout error."""
+        from agent_cdp.events.result import ResultStatus
+
+        completed: list[str] = []
+        failed: list[str] = []
+        timed_out: list[str] = []
+        for r in self.event_results.values():
+            if hasattr(r, 'status') and hasattr(r, 'handler_name'):
+                if r.status == ResultStatus.COMPLETED:
+                    completed.append(r.handler_name)
+                elif r.status == ResultStatus.TIMEOUT:
+                    timed_out.append(r.handler_name)
+                elif r.status == ResultStatus.FAILED:
+                    failed.append(r.handler_name)
+        return {
+            'pending_count': self._pending_count,
+            'completed_handlers': completed,
+            'failed_handlers': failed,
+            'timed_out_handlers': timed_out,
+        }
 
     def __deepcopy__(self, memo: dict[int, Any]) -> 'BaseEvent[T_Result]':
         """Deep copy with independent asyncio.Event and reset pending count.
