@@ -54,7 +54,7 @@ class FakeCDPCommandClient(FakeCDPClient):
     def is_connected(self) -> bool:
         return True
 
-    async def send(self, method: str, params: dict[str, Any] | None = None) -> Any:
+    async def send(self, method: str, params: dict[str, Any] | None = None, session_id: str | None = None) -> Any:
         self.sent_commands.append((method, params))
         return {}
 
