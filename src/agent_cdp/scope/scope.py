@@ -45,6 +45,14 @@ class EventScope:
         self._event_history: list[BaseEvent[Any]] = []
         self._max_history_size = max_history_size
 
+        # MRO match cache (ABC-inspired: positive + negative + version counter)
+        self._match_cache: weakref.WeakKeyDictionary[
+            type[BaseEvent[Any]], tuple[int, list[Connection]]
+        ] = weakref.WeakKeyDictionary()
+        self._negative_cache: weakref.WeakSet[type[BaseEvent[Any]]] = weakref.WeakSet()
+        self._connection_version: int = 0
+        self._negative_cache_version: int = 0
+
     @property
     def event_history(self) -> list[BaseEvent[Any]]:
         """Return a copy of the event history."""
@@ -115,6 +123,7 @@ class EventScope:
             priority=priority,
         )
         self._catch_all_connections.append(conn)
+        self._connection_version += 1
 
         if target_scope is not None:
             target_scope._add_incoming(conn)
@@ -288,14 +297,45 @@ class EventScope:
         """Collect connections matching the event type via MRO, plus catch-all.
 
         Returns connections sorted by priority (highest first).
+
+        Uses an ABC-inspired two-level cache (positive + negative) with a
+        per-scope version counter for invalidation.  See cpython/Lib/_py_abc.py
+        for the pattern origin.
         """
+        event_type = type(event)
+
+        # ── Negative cache check (cheapest path) ──
+        if self._negative_cache_version == self._connection_version:
+            if event_type in self._negative_cache:
+                return []
+        else:
+            # Version mismatch → negative cache stale, clear it (ABC pattern)
+            self._negative_cache = weakref.WeakSet()
+            self._negative_cache_version = self._connection_version
+
+        # ── Positive cache check ──
+        cached = self._match_cache.get(event_type)
+        if cached is not None:
+            version, connections = cached
+            if version == self._connection_version:
+                return [c for c in connections if c.active]
+            # Stale entry — fall through to rebuild
+
+        # ── Cache miss: full MRO traversal + sort ──
         matching: list[Connection] = []
-        for cls in type(event).__mro__:
+        for cls in event_type.__mro__:
             if cls in self._connections_by_type:
-                matching.extend(c for c in self._connections_by_type[cls] if c.active)
-        matching.extend(c for c in self._catch_all_connections if c.active)
+                matching.extend(self._connections_by_type[cls])
+        matching.extend(self._catch_all_connections)
+
+        if not matching:
+            # Negative result → cache in negative cache
+            self._negative_cache.add(event_type)
+            return []
+
         matching.sort(key=lambda c: c.priority, reverse=True)
-        return matching
+        self._match_cache[event_type] = (self._connection_version, matching)
+        return [c for c in matching if c.active]
 
     def _resolve_mode(self, conn: Connection) -> ConnectionType:
         """Resolve AUTO mode to DIRECT or QUEUED based on scope relationship."""
@@ -318,15 +358,18 @@ class EventScope:
     def _add_connection(self, conn: Connection) -> None:
         """Register a typed connection. Called by connect() free function."""
         self._connections_by_type.setdefault(conn.event_type, []).append(conn)
+        self._connection_version += 1
 
     def _remove_connection(self, conn: Connection) -> None:
         """Remove a connection from storage. Called by Connection.disconnect()."""
         conns = self._connections_by_type.get(conn.event_type)
         if conns is not None and conn in conns:
             conns.remove(conn)
+            self._connection_version += 1
             return
         if conn in self._catch_all_connections:
             self._catch_all_connections.remove(conn)
+            self._connection_version += 1
 
     def _add_incoming(self, conn: Connection) -> None:
         """Track a connection targeting this scope."""

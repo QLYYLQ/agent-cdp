@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 import anyio
+import orjson
 
 from agent_cdp._registry import EventRegistrar
 from agent_cdp.events.base import BaseEvent
@@ -28,9 +28,9 @@ class EventLogWriter:
         Injects the 'event_type' discriminator field (conscribe registry key)
         into the serialized JSON so read_all() can look up the correct class.
         """
-        data = json.loads(event.model_dump_json())  # type: ignore[reportUnknownMemberType,reportUnknownArgumentType]
+        data = orjson.loads(event.model_dump_json())  # type: ignore[reportUnknownMemberType,reportUnknownArgumentType]
         data['event_type'] = type(event).__registry_key__  # type: ignore[reportUnknownMemberType]
-        line = json.dumps(data)
+        line = orjson.dumps(data).decode()
         async with await anyio.open_file(self._path, 'a') as f:
             await f.write(line + '\n')
 
@@ -52,7 +52,7 @@ class EventLogWriter:
         for line in content.strip().splitlines():
             if not line.strip():
                 continue
-            data = json.loads(line)
+            data = orjson.loads(line)
             event_type_name = data['event_type']
             event_cls = EventRegistrar.get(event_type_name)  # type: ignore[reportUnknownVariableType,reportUnknownMemberType]
             events.append(event_cls.model_validate_json(line))  # type: ignore[reportUnknownMemberType,reportUnknownArgumentType]

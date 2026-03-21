@@ -334,6 +334,41 @@ Tested on Google, Xiaohongshu, Bilibili, and reCAPTCHA Demo:
 
 Reproduce: `uv run python -m demo.bench`
 
+### Multi-tab parallel benchmark (v0.4.0)
+
+Browser-level CDP (single WebSocket, the same URL cloud providers give you) → 4 tabs × 5 watchdogs each (Security, Popups, Screenshot, Captcha, Crash). Real-world heavy-DOM sites.
+
+#### Sequential vs Parallel
+
+| Mode | Wall-clock | Details |
+|------|-----------|---------|
+| **Sequential** (one tab at a time) | 15.69s | Each tab waits for the previous |
+| **Parallel** (all 4 tabs via `asyncio.gather`) | **6.78s** | All tabs navigate concurrently |
+| **Parallelism speedup** | **2.52x** | Limited by slowest tab (Xiaohongshu) |
+
+#### Per-site breakdown (5 watchdogs, browser-level CDP)
+
+| Site | Security check | CDP navigate | Page load | Screenshot | Captcha scan | Total |
+|------|---------------|-------------|-----------|------------|-------------|-------|
+| Xiaohongshu | 97 us | 520 ms | 1.51s | 281 ms | 3.2 ms | 3.88s |
+| Amazon | 87 us | 638 ms | 1.34s | 1.02s | 2.4 ms | 4.54s |
+| Bilibili | 77 us | 207 ms | 943 ms | 240 ms | 3.3 ms | 2.94s |
+| reCAPTCHA | 76 us | 632 ms | 2.03s | 68 ms | 2.8 ms | 4.33s |
+
+Framework overhead: **0.0007%** of end-to-end time. The bottleneck is always network I/O, never the event system.
+
+#### Tier 1 optimizations (v0.4.0)
+
+| Optimization | Metric | Speedup |
+|---|---|---|
+| **Scope-level deadlock monitor** (replaces per-handler `asyncio.create_task`) | per-handler overhead | **23.5x** (7.6µs → 0.3µs) |
+| **orjson** (replaces stdlib `json`) dumps screenshot 496KB | CDP serialization | **30.5x** (1.14ms → 37µs) |
+| **orjson** dumps DOM 76KB | CDP serialization | **4.3x** (302µs → 71µs) |
+| **orjson** loads DOM 76KB | CDP deserialization | **2.0x** (248µs → 122µs) |
+| **MRO match cache** (ABC-inspired positive + negative + version counter) | emit storm 100x | 10-12µs/event (cached) |
+
+Reproduce: `uv run python -m demo.bench_optimizations`
+
 ## Action dispatch: using agent-cdp as an agent action executor
 
 agent-cdp is not only for browser→handler event flow. It works equally well for the **reverse direction**: agent→browser action dispatch with anti-detection, security gating, and result collection.
@@ -650,7 +685,7 @@ New in agent-cdp:
 git clone https://github.com/QLYYLQ/agent-cdp.git
 cd agent-cdp
 uv sync
-uv run pytest -vxs tests/          # run all tests (266 tests)
+uv run pytest -vxs tests/          # run all tests (302 tests)
 uv run ruff check --fix && uv run ruff format   # lint + format
 uv run pyright                       # type check (strict mode)
 ```

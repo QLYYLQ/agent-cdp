@@ -1,6 +1,6 @@
 [project]
 name = "agent-cdp"
-version = "0.3.2"
+version = "0.4.0"
 description = "Scoped Event System for agent-era browser automation"
 readme = "README.md"
 license = "MIT"
@@ -26,6 +26,7 @@ dependencies = [
     "pydantic>=2.0",
     "conscribe>=0.5.3",
     "uuid-utils>=0.9",
+    "orjson>=3.9",
 ]
 
 [project.optional-dependencies]
