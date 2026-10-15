@@ -16,3 +16,8 @@ if TYPE_CHECKING:
 _current_event: ContextVar[BaseEvent[object] | None] = ContextVar('_current_event', default=None)
 _current_connection: ContextVar[Connection | None] = ContextVar('_current_connection', default=None)
 _emit_depth: ContextVar[int] = ContextVar('_emit_depth', default=0)
+
+# Set only while a queued handler owns the serial consumer.
+_current_scope_id: ContextVar[str | None] = ContextVar('_current_scope_id', default=None)
+
+_current_scope_token: ContextVar[object | None] = ContextVar('_current_scope_token', default=None)

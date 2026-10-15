@@ -13,8 +13,21 @@ class TestAllSymbolsImportable:
             obj = getattr(agent_cdp, name, None)
             assert obj is not None, f'{name} listed in __all__ but not importable'
 
-    def test_all_count(self) -> None:
-        assert len(agent_cdp.__all__) == 26
+    def test_delivery_and_lifecycle_contracts_exported(self) -> None:
+        assert {
+            'RequestContract',
+            'ResultContract',
+            'Participation',
+            'EventWaiter',
+            'QueueFullError',
+            'SelfWaitError',
+            'FlushResult',
+            'ScopeStats',
+            'WatchdogBinding',
+            'ResumeTimeoutError',
+            'DeliverySummary',
+        } <= set(agent_cdp.__all__)
+        assert len(agent_cdp.__all__) == len(set(agent_cdp.__all__))
 
 
 class TestInternalNotInAll:

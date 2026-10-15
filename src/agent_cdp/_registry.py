@@ -6,7 +6,7 @@ Pattern verified in demo_conscribe_pydantic.py.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from conscribe import create_registrar
 from pydantic import BaseModel
@@ -28,4 +28,4 @@ EventRegistrar = create_registrar(
     key_separator='.',
 )
 
-EventBridge = EventRegistrar.bridge(BaseModel)  # type: ignore[reportUnknownVariableType,reportUnknownMemberType]
+EventBridge = cast(type[BaseModel], EventRegistrar.bridge(BaseModel))

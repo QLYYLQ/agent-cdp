@@ -11,11 +11,12 @@ The core insight: bubus (the event bus used by browser-use) has fundamental limi
 ## Repository Layout
 
 ```
-analysis/                    # Design documents (read these first for context)
+docs/                        # Current published specification, migration, acceptance
+analysis/                    # Local historical design notes (gitignored)
 ├── bubus_design_gaps_in_agent_browser_scenario.md   # 8 architectural gaps identified
 └── proposal_scoped_eventbus.md                      # Full API design for new system
 
-qt_ref/qt/                   # 16 Qt/GObject reference docs for design rationale
+qt_ref/qt/                   # Local Qt/GObject references (gitignored)
 bu_ref/                      # Reference copies of bubus/cdp-use/browser-use (gitignored)
 
 pyproject.toml               # Workspace root (uv, Python >=3.11)
@@ -30,13 +31,14 @@ uv sync                                        # install dependencies
 uv run pytest -vxs tests/                       # all tests
 uv run pytest -vxs tests/test_foo.py            # single test file
 uv run pytest -vxs tests/test_foo.py::test_bar  # single test
-uv run ruff check --fix && uv run ruff format   # lint + format
+uv run ruff check src tests demo                # lint
+uv run ruff format --check src tests demo        # format
 uv run pyright                                  # type check
 ```
 
 ## Architecture: Scoped Event System
 
-The new system replaces bubus's single-bus model with a Qt-inspired connection topology. Full API design is in `analysis/proposal_scoped_eventbus.md`.
+The new system replaces bubus's single-bus model with a Qt-inspired connection topology. Current behavior is specified in `docs/event-lifecycle-spec.md`; exact 0.5 APIs are in `docs/migration-0.5.md`. Historical `analysis/` and third-party `qt_ref/`, `bu_ref/`, `other_framework/` are local-only references.
 
 ### Core Concepts
 

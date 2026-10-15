@@ -159,7 +159,7 @@ async def create_real_tab(cdp: CDPClient, group: ScopeGroup, tab_name: str) -> t
     await cdp.send('Page.enable', session_id=session_id)
     await cdp.send('Runtime.enable', session_id=session_id)
 
-    scope = await group.create_scope(tab_name, target_id=target_id, session_id=session_id)
+    scope = await group.create_scope(tab_name, metadata={'target_id': target_id, 'session_id': session_id})
     return scope, target_id, session_id
 
 
@@ -334,15 +334,12 @@ async def run_demo() -> None:
             priority=50,
         )
 
-        expect_task = asyncio.create_task(
-            expect(
-                tabs[1],
-                NavigationCompleteEvent,
-                include=lambda e: 'xiaohongshu' in e.url,
-                timeout=30.0,
-            )
+        expect_task = expect(
+            tabs[1],
+            NavigationCompleteEvent,
+            include=lambda e: 'xiaohongshu' in e.url,
+            timeout=30.0,
         )
-        await asyncio.sleep(0)
 
         tabs[1].emit(NavigateToUrlEvent(url='https://www.xiaohongshu.com/explore'))
 

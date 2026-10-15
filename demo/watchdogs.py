@@ -1,6 +1,6 @@
 """Watchdogs migrated from browser-use to agent-cdp scoped event system.
 
-Each watchdog inherits from WatchdogBase (conscribe 0.5.3) for auto-registration
+Each watchdog inherits from WatchdogBase (conscribe 2.x) for auto-registration
 and has a normalized ``attach(scope, session_id=None)`` signature.
 
 Key differences from browser-use:
@@ -13,6 +13,7 @@ Key differences from browser-use:
 import asyncio
 import base64
 import logging
+from functools import partial
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -51,12 +52,15 @@ class SecurityWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
 
     def attach(self, scope: EventScope, session_id: str | None = None) -> None:
         """Connect security check as Direct handler with high priority."""
-        scope.connect(
+        self.detach(scope, session_id)
+        conn = scope.connect(
             NavigateToUrlEvent,
             self.check_navigation,
             mode=ConnectionType.DIRECT,
             priority=100,  # runs before navigation handlers (priority=0)
         )
+
+        self.track_binding(scope, session_id, connections=[conn])
 
     def check_navigation(self, event: NavigateToUrlEvent) -> None:
         """Synchronous Direct handler — blocks disallowed URLs.
@@ -113,10 +117,11 @@ class PopupsWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
         if session_id is None:
             msg = 'PopupsWatchdog requires session_id'
             raise ValueError(msg)
+        self.detach(scope, session_id)
         self._session_id = session_id
 
         # Direct handler (p=100): synchronous recording only
-        scope.connect(
+        record_conn = scope.connect(
             PopupDialogEvent,
             self._record_dialog,
             mode=ConnectionType.DIRECT,
@@ -124,9 +129,9 @@ class PopupsWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
         )
 
         # Queued handler (p=50): async CDP dismiss
-        scope.connect(
+        dismiss_conn = scope.connect(
             PopupDialogEvent,
-            self._dismiss_dialog_async,
+            partial(self._dismiss_dialog_async, session_id=session_id),
             mode=ConnectionType.QUEUED,
             target_scope=scope,
             priority=50,
@@ -143,6 +148,10 @@ class PopupsWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
             ),
         )
 
+        self.track_binding(
+            scope, session_id, connections=[record_conn, dismiss_conn], close_callbacks=[self._bridge.close]
+        )
+
     def _record_dialog(self, event: PopupDialogEvent) -> None:
         """Direct handler (p=100) — synchronous recording only."""
         self.dismissed_dialogs.append(
@@ -157,13 +166,13 @@ class PopupsWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
             event.message,
         )
 
-    async def _dismiss_dialog_async(self, event: PopupDialogEvent) -> None:
+    async def _dismiss_dialog_async(self, event: PopupDialogEvent, *, session_id: str | None = None) -> None:
         """Queued handler (p=50) — async CDP call to dismiss the dialog."""
         try:
             await self.cdp.send(
                 'Page.handleJavaScriptDialog',
                 {'accept': True},
-                session_id=self._session_id,
+                session_id=session_id,
             )
             logger.info('PopupsWatchdog: dismissed %s dialog', event.dialog_type)
         except Exception:
@@ -191,14 +200,17 @@ class ScreenshotWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
             msg = 'ScreenshotWatchdog requires session_id'
             raise ValueError(msg)
         self._session_id = session_id
-        scope.connect(
+        self.detach(scope, session_id)
+        conn = scope.connect(
             ScreenshotEvent,
-            self.capture,
+            partial(self.capture, session_id=session_id),
             mode=ConnectionType.QUEUED,
             target_scope=scope,  # target_scope = same scope → Queued via explicit mode
         )
 
-    async def capture(self, event: ScreenshotEvent) -> str:
+        self.track_binding(scope, session_id, connections=[conn])
+
+    async def capture(self, event: ScreenshotEvent, *, session_id: str | None = None) -> str:
         """Queued async handler — captures screenshot via CDP."""
         params: dict[str, bool] = {}
         if event.full_page:
@@ -207,7 +219,7 @@ class ScreenshotWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
         result = await self.cdp.send(
             'Page.captureScreenshot',
             {'format': 'png', **params},
-            session_id=self._session_id,
+            session_id=session_id if session_id is not None else self._session_id,
         )
         data: str = result.get('data', '')
         logger.info('ScreenshotWatchdog: captured %d bytes of PNG data', len(data))
@@ -233,11 +245,14 @@ class CrashWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
 
     def attach(self, scope: EventScope, session_id: str | None = None) -> None:
         """Connect crash handler and register CDP crash event bridge."""
+        self.detach(scope, session_id)
         self._bridge = CDPEventBridge(self.cdp, scope)
         self._bridge.bridge(
             'Target.targetCrashed',
             lambda params: self._make_crash_event(params),
         )
+
+        self.track_binding(scope, session_id, close_callbacks=[self._bridge.close])
 
     def _make_crash_event(self, params: dict[str, str]) -> BrowserErrorEvent:
         """Build a BrowserErrorEvent from CDP crash params."""
@@ -378,25 +393,34 @@ class CaptchaWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
         if session_id is None:
             msg = 'CaptchaWatchdog requires session_id'
             raise ValueError(msg)
+        self.detach(scope, session_id)
         self._scope = scope
         self._session_id = session_id
 
         # Auto-scan after each navigation
-        scope.connect(
+        conn = scope.connect(
             NavigationCompleteEvent,
-            self._on_navigation_complete,
+            partial(self._on_navigation_complete, scope=scope, session_id=session_id),
             mode=ConnectionType.QUEUED,
             target_scope=scope,
             priority=10,
         )
 
-    async def _on_navigation_complete(self, event: NavigationCompleteEvent) -> None:
-        """Queued handler — scan for captcha after page load."""
-        await self.scan(event.url)
+        self.track_binding(scope, session_id, connections=[conn])
 
-    async def scan(self, url: str = '') -> dict[str, object] | None:
+    async def _on_navigation_complete(
+        self, event: NavigationCompleteEvent, *, scope: EventScope, session_id: str
+    ) -> None:
+        """Queued handler — scan for captcha after page load."""
+        await self.scan(event.url, scope=scope, session_id=session_id)
+
+    async def scan(
+        self, url: str = '', *, scope: EventScope | None = None, session_id: str | None = None
+    ) -> dict[str, object] | None:
         """Run DOM-based captcha detection. Returns detection result or None."""
-        if not self._session_id or not self._scope:
+        scope = scope if scope is not None else self._scope
+        session_id = session_id if session_id is not None else self._session_id
+        if not session_id or not scope:
             return None
 
         try:
@@ -407,7 +431,7 @@ class CaptchaWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
                     'returnByValue': True,
                     'awaitPromise': False,
                 },
-                session_id=self._session_id,
+                session_id=session_id,
             )
         except Exception:
             logger.exception('CaptchaWatchdog: Runtime.evaluate failed')
@@ -421,7 +445,7 @@ class CaptchaWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
 
         if value.get('detected'):
             det_event = CaptchaDetectedEvent(
-                target_id=self._session_id or '',
+                target_id=session_id,
                 vendor=str(value.get('vendor', 'unknown')),
                 url=url,
                 sitekey=str(value.get('sitekey', '')),
@@ -429,7 +453,7 @@ class CaptchaWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
                 challenge_visible=bool(value.get('challengeVisible', False)),
                 element_count=int(value.get('elementCount', 0)),
             )
-            self._scope.emit(det_event)
+            scope.emit(det_event)
 
             # Determine state
             if value.get('solved'):
@@ -440,12 +464,12 @@ class CaptchaWatchdog(WatchdogBase):  # type: ignore[reportUntypedBaseClass]
                 state = 'detected'
 
             state_event = CaptchaStateChangedEvent(
-                target_id=self._session_id or '',
+                target_id=session_id,
                 vendor=str(value.get('vendor', 'unknown')),
                 state=state,
                 url=url,
             )
-            self._scope.emit(state_event)
+            scope.emit(state_event)
 
             logger.info(
                 'CaptchaWatchdog: %s captcha %s on %s (sitekey=%s, elements=%d)',

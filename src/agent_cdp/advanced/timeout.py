@@ -14,7 +14,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_DEADLOCK_DELAY = 15.0
 
 
-async def _deadlock_warning(handler_name: str, delay: float = DEFAULT_DEADLOCK_DELAY) -> None:
+async def _deadlock_warning(  # pyright: ignore[reportUnusedFunction]
+    handler_name: str, delay: float = DEFAULT_DEADLOCK_DELAY
+) -> None:
     """Background task that logs a warning if a handler runs too long.
 
     Launched alongside each queued handler execution. Cancelled in the finally

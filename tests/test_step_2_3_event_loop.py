@@ -272,8 +272,8 @@ class TestMixedDirectQueued:
         assert conn_direct.id in event.event_results
         assert event.event_results[conn_direct.id].result == 'direct-result'
 
-        # Queued result is NOT yet available
-        assert conn_queued.id not in event.event_results
+        # Queued delivery is visible before execution begins.
+        assert event.event_results[conn_queued.id].status == ResultStatus.QUEUED
 
         try:
             await scope._event_loop.start()

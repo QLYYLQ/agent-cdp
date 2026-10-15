@@ -54,10 +54,7 @@ class TestMonitorWarnsLongHandler:
 
         await loop.stop()
 
-        assert any(
-            'has been running' in r.message and 'slow_handler' in r.message
-            for r in caplog.records
-        )
+        assert any('has been running' in r.message and 'slow_handler' in r.message for r in caplog.records)
 
 
 class TestMonitorNoWarnFastHandler:
@@ -85,10 +82,7 @@ class TestMonitorNoWarnFastHandler:
 
         await loop.stop()
 
-        deadlock_warnings = [
-            r for r in caplog.records
-            if 'has been running' in r.message
-        ]
+        deadlock_warnings = [r for r in caplog.records if 'has been running' in r.message]
         assert len(deadlock_warnings) == 0
 
 
@@ -110,7 +104,10 @@ class TestMonitorWarnsOnce:
             return 'done'
 
         scope.connect(
-            MonitorTestEvent, very_slow_handler, mode=ConnectionType.QUEUED, target_scope=scope,
+            MonitorTestEvent,
+            very_slow_handler,
+            mode=ConnectionType.QUEUED,
+            target_scope=scope,
         )
 
         with caplog.at_level(logging.WARNING):
@@ -121,8 +118,7 @@ class TestMonitorWarnsOnce:
         await loop.stop()
 
         deadlock_warnings = [
-            r for r in caplog.records
-            if 'has been running' in r.message and 'very_slow_handler' in r.message
+            r for r in caplog.records if 'has been running' in r.message and 'very_slow_handler' in r.message
         ]
         assert len(deadlock_warnings) == 1
 

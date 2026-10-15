@@ -5,12 +5,14 @@ Demonstrates the core problem PausedTarget solves:
   Without coordination, CDP events (navigation, dialogs, DOM changes) can fire
   BEFORE event bridges and handlers are registered — causing missed events.
 
-  PausedTarget guarantees: all bridges + handlers are wired up BEFORE the
-  browser target starts loading. Resume is always called, even on failure.
+  This demo creates an about:blank tab, registers bridges and handlers, then
+  requests destination navigation. PausedTarget attempts session-routed resume
+  on exit. To pause execution before setup, clients must first configure Chrome
+  auto-attach with waitForDebuggerOnStart; see test_paused_target_chrome.py.
 
 Two usage modes shown:
-  Tab 1 (Amazon):     PausedTarget(resume=callable)  — custom resume callback
-  Tab 2 (Xiaohongshu): CDPEventBridge.paused(resume=callable) — convenience factory
+  Tab 1 (Amazon):     PausedTarget(cdp=client)  — built-in session-routed resume
+  Tab 2 (Xiaohongshu): CDPEventBridge.paused(cdp=client) — convenience factory
 
 Usage:
     uv run python -m demo.paused_target
@@ -132,19 +134,11 @@ async def setup_tab_with_paused_target(
     session_id = attach['sessionId']
     ok(f'{tab_label(tab_name)} target created & attached (session={session_id[:12]}...)')
 
-    # Step 3: Build the resume callable — sends Runtime.runIfWaitingForDebugger
-    # We use resume= (not cdp=) because CDPClient.send() needs session_id as a
-    # separate kwarg, whereas CDPCommandProtocol.send() only takes method+params.
-    async def resume_target() -> None:
-        await cdp.send('Runtime.runIfWaitingForDebugger', session_id=session_id)
-
-    # Step 4: PausedTarget — all setup happens atomically before resume
+    # Step 3: Built-in resume routes the command through the target session.
     if use_factory:
-        # Mode B: CDPEventBridge.paused() convenience factory
-        ctx = CDPEventBridge.paused(resume=resume_target)
+        ctx = CDPEventBridge.paused(cdp=cdp, session_id=session_id)
     else:
-        # Mode A: PausedTarget directly
-        ctx = PausedTarget(resume=resume_target)
+        ctx = PausedTarget(cdp=cdp, session_id=session_id)
 
     scope: EventScope | None = None
     bridge: CDPEventBridge | None = None
@@ -161,8 +155,7 @@ async def setup_tab_with_paused_target(
         # 4b. Create EventScope
         scope = await group.create_scope(
             f'tab-{tab_name.lower()}',
-            target_id=target_id,
-            session_id=session_id,
+            metadata={'target_id': target_id, 'session_id': session_id},
         )
 
         # 4c. Create CDP event bridge — routes Chrome events → agent-cdp events
@@ -231,7 +224,7 @@ async def setup_tab_with_paused_target(
 async def run_demo() -> None:
     banner('PausedTarget Demo — Race-Free CDP Event Bridging')
     print(f'{DIM}Amazon + Xiaohongshu · PausedTarget ensures zero missed events{RESET}')
-    print(f'{DIM}Two modes: PausedTarget(resume=fn) vs CDPEventBridge.paused(resume=fn){RESET}\n')
+    print(f'{DIM}Two modes: PausedTarget(cdp=...) vs CDPEventBridge.paused(cdp=...){RESET}\n')
 
     chrome_proc = None
     cdp: CDPClient | None = None
@@ -257,12 +250,12 @@ async def run_demo() -> None:
         group = ScopeGroup('browser')
 
         # ══════════════════════════════════════════════════════
-        phase(2, 'Amazon — PausedTarget(resume=callable)')
+        phase(2, 'Amazon — PausedTarget(cdp=client)')
         # ══════════════════════════════════════════════════════
 
-        info('Mode A: PausedTarget(resume=resume_fn)')
+        info('Mode A: PausedTarget(cdp=client, session_id=...)')
         info('  All bridges + handlers registered inside async with block')
-        info('  resume_fn sends Runtime.runIfWaitingForDebugger on exit')
+        info('  Built-in resume sends Runtime.runIfWaitingForDebugger to the target session')
         print()
 
         amazon_collector = TabEventCollector('Amazon')
@@ -296,10 +289,10 @@ async def run_demo() -> None:
             warn(f'Amazon load timeout after {load_time:.2f}s (continuing with partial events)')
 
         # ══════════════════════════════════════════════════════
-        phase(3, 'Xiaohongshu — CDPEventBridge.paused(resume=callable)')
+        phase(3, 'Xiaohongshu — CDPEventBridge.paused(cdp=client)')
         # ══════════════════════════════════════════════════════
 
-        info('Mode B: CDPEventBridge.paused(resume=resume_fn)')
+        info('Mode B: CDPEventBridge.paused(cdp=client, session_id=...)')
         info('  Same PausedTarget, accessed via convenience factory')
         print()
 
@@ -467,7 +460,7 @@ async def run_demo() -> None:
             pass
 
         if resume_called:
-            ok('Resume called despite exception — target will never be stuck')
+            ok('Resume called despite exception — resume acknowledgement confirmed')
         else:
             fail('Resume was NOT called — BUG!')
 
@@ -526,7 +519,7 @@ async def run_demo() -> None:
 
         print(f'{GREEN}All phases passed.{RESET}\n')
         print(f'{DIM}Demonstrated:{RESET}')
-        print('  1. PausedTarget(resume=fn)     — race-free bridge setup on Amazon')
+        print('  1. PausedTarget(cdp=client)    — race-free bridge setup on Amazon')
         print('  2. CDPEventBridge.paused(...)   — convenience factory on Xiaohongshu')
         print('  3. 5 CDP event types bridged:   Page.load, DOMContent, FrameNav, Dialog, Network')
         print('  4. All handlers registered BEFORE navigation — zero missed events')

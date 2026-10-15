@@ -41,6 +41,7 @@ class CDPClient:
         method: str,
         params: dict[str, Any] | None = None,
         session_id: str | None = None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         """Send a CDP command and wait for the response."""
         self._msg_id += 1
@@ -52,11 +53,15 @@ class CDPClient:
 
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
-        self._pending[self._msg_id] = future
+        message_id = self._msg_id
+        self._pending[message_id] = future
 
-        # CDP requires text frames (not binary) — decode orjson bytes to str
-        await self._ws.send(orjson.dumps(msg).decode())
-        return await asyncio.wait_for(future, timeout=30.0)
+        try:
+            # CDP requires text frames (not binary).
+            await self._ws.send(orjson.dumps(msg).decode())
+            return await asyncio.wait_for(future, timeout=30.0 if timeout is None else timeout)
+        finally:
+            self._pending.pop(message_id, None)
 
     def on_event(self, method: str, callback: Callable[..., Any]) -> None:
         """Register a handler for a CDP event (e.g. 'Page.javascriptDialogOpening')."""

@@ -122,7 +122,7 @@ class TestQueuedDoesNotTriggerCycleCheck:
         scope = EventScope('queued')
         enqueued: list[str] = []
 
-        def queued_handler(event: LogNavEvent) -> None:
+        async def queued_handler(event: LogNavEvent) -> None:
             enqueued.append('called')
 
         scope.connect(LogNavEvent, queued_handler, mode=ConnectionType.QUEUED)

@@ -38,9 +38,9 @@ class FakeCDPClient:
         if callback in cbs:
             cbs.remove(callback)
 
-    def fire(self, method: str, params: dict[str, Any]) -> None:
+    def fire(self, method: str, params: dict[str, Any], session_id: str | None = None) -> None:
         for cb in list(self._listeners.get(method, [])):
-            cb(params)
+            cb(params, session_id)
 
 
 class FakeCDPCommandClient(FakeCDPClient):
@@ -49,13 +49,21 @@ class FakeCDPCommandClient(FakeCDPClient):
     def __init__(self) -> None:
         super().__init__()
         self.sent_commands: list[tuple[str, dict[str, Any] | None]] = []
+        self.sessions: list[str | None] = []
 
     @property
     def is_connected(self) -> bool:
         return True
 
-    async def send(self, method: str, params: dict[str, Any] | None = None, session_id: str | None = None) -> Any:
+    async def send(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        session_id: str | None = None,
+        timeout: float | None = None,
+    ) -> Any:
         self.sent_commands.append((method, params))
+        self.sessions.append(session_id)
         return {}
 
 
@@ -104,9 +112,7 @@ class TestPausedTargetResume:
             pass
         # Manually call resume again — should be no-op
         await ctx.resume()
-        resume_count = sum(
-            1 for m, _ in cdp.sent_commands if m == 'Runtime.runIfWaitingForDebugger'
-        )
+        resume_count = sum(1 for m, _ in cdp.sent_commands if m == 'Runtime.runIfWaitingForDebugger')
         assert resume_count == 1
 
     @pytest.mark.asyncio
@@ -179,11 +185,14 @@ class TestPausedTargetIntegration:
             scope.connect(DialogEvent, handler, mode=ConnectionType.DIRECT, priority=100)
 
         # After resume, simulate CDP event
-        cdp.fire('Page.javascriptDialogOpening', {
-            'url': 'https://example.com',
-            'message': 'Are you sure?',
-            'sessionId': 'sess-A',
-        })
+        cdp.fire(
+            'Page.javascriptDialogOpening',
+            {
+                'url': 'https://example.com',
+                'message': 'Are you sure?',
+            },
+            'sess-A',
+        )
 
         assert len(received) == 1
         assert received[0].url == 'https://example.com'
@@ -231,11 +240,12 @@ class TestPausedTargetLifecycle:
 
     @pytest.mark.asyncio
     async def test_session_id_forwarded_to_cdp(self) -> None:
-        """When session_id is given, resume command includes it in params."""
+        """Resume is routed in the envelope, with no sessionId in params."""
         cdp = FakeCDPCommandClient()
         async with PausedTarget(cdp=cdp, session_id='sess-X'):
             pass
-        # The resume command should include sessionId
+        # Previously the command incorrectly went to the browser session.
         method, params = cdp.sent_commands[-1]
         assert method == 'Runtime.runIfWaitingForDebugger'
-        assert params == {'sessionId': 'sess-X'}
+        assert params is None
+        assert cdp.sessions[-1] == 'sess-X'

@@ -81,6 +81,7 @@ class SecurityViolation(Exception):
 def security_check(event: BrowserAction) -> ActionResult:
     if isinstance(event, NavigateAction):
         from urllib.parse import urlparse
+
         domain = urlparse(event.url).netloc
         if domain in BLOCKED_DOMAINS:
             event.consume()
@@ -89,6 +90,7 @@ def security_check(event: BrowserAction) -> ActionResult:
 
 
 # ── DOM 提取器 (QUEUED, priority=80) ──
+
 
 async def dom_extractor(event: ExtractDOMAction) -> ActionResult:
     """通过 CDP Runtime.evaluate 执行 JS 提取页面信息。"""
@@ -105,6 +107,7 @@ async def dom_extractor(event: ExtractDOMAction) -> ActionResult:
 
 
 # ── 反检测鼠标轨迹点击 (QUEUED, priority=50) ──
+
 
 async def stealth_click(event: ClickAction) -> ActionResult:
     """贝塞尔曲线鼠标轨迹 → 真实 CDP Input.dispatchMouseEvent。"""
@@ -135,19 +138,32 @@ async def stealth_click(event: ClickAction) -> ActionResult:
 
     # 3. 逐点发送 mouseMoved
     for px, py in trajectory:
-        await cdp.send('Input.dispatchMouseEvent', {
-            'type': 'mouseMoved', 'x': px, 'y': py,
-            'button': 'none', 'timestamp': time.time(),
-        })
+        await cdp.send(
+            'Input.dispatchMouseEvent',
+            {
+                'type': 'mouseMoved',
+                'x': px,
+                'y': py,
+                'button': 'none',
+                'timestamp': time.time(),
+            },
+        )
         await asyncio.sleep(random.uniform(0.004, 0.02))
 
     # 4. 点击 (mousePressed + mouseReleased)
     await asyncio.sleep(random.uniform(0.05, 0.12))
     for etype in ('mousePressed', 'mouseReleased'):
-        await cdp.send('Input.dispatchMouseEvent', {
-            'type': etype, 'x': tx, 'y': ty,
-            'button': 'left', 'clickCount': 1, 'timestamp': time.time(),
-        })
+        await cdp.send(
+            'Input.dispatchMouseEvent',
+            {
+                'type': etype,
+                'x': tx,
+                'y': ty,
+                'button': 'left',
+                'clickCount': 1,
+                'timestamp': time.time(),
+            },
+        )
         if etype == 'mousePressed':
             await asyncio.sleep(random.uniform(0.04, 0.10))
 
@@ -159,6 +175,7 @@ async def stealth_click(event: ClickAction) -> ActionResult:
 
 
 # ── 反检测滚动 (QUEUED, priority=50) ──
+
 
 async def stealth_scroll(event: ScrollAction) -> ActionResult:
     """多次小幅滚动模拟人类行为。"""
@@ -173,12 +190,17 @@ async def stealth_scroll(event: ScrollAction) -> ActionResult:
         chunk = max(10, min(chunk, total - scrolled))
         if scrolled >= total:
             break
-        await cdp.send('Input.dispatchMouseEvent', {
-            'type': 'mouseWheel',
-            'x': random.randint(400, 800), 'y': random.randint(300, 500),
-            'deltaX': 0, 'deltaY': chunk * sign,
-            'timestamp': time.time(),
-        })
+        await cdp.send(
+            'Input.dispatchMouseEvent',
+            {
+                'type': 'mouseWheel',
+                'x': random.randint(400, 800),
+                'y': random.randint(300, 500),
+                'deltaX': 0,
+                'deltaY': chunk * sign,
+                'timestamp': time.time(),
+            },
+        )
         scrolled += chunk
         await asyncio.sleep(random.uniform(0.03, 0.08))
 
@@ -186,6 +208,7 @@ async def stealth_scroll(event: ScrollAction) -> ActionResult:
 
 
 # ── 导航 (QUEUED, priority=50) ──
+
 
 async def navigate_executor(event: NavigateAction) -> ActionResult:
     assert cdp is not None
@@ -212,7 +235,9 @@ async def audit_logger(event: BrowserAction) -> ActionResult:
 # ════════════════════════════════════════════════════════════════
 
 
-def _bezier_trajectory(start: tuple[float, float], end: tuple[float, float], steps: int = 20) -> list[tuple[float, float]]:
+def _bezier_trajectory(
+    start: tuple[float, float], end: tuple[float, float], steps: int = 20
+) -> list[tuple[float, float]]:
     sx, sy = start
     ex, ey = end
     cx = (sx + ex) / 2 + random.uniform(-80, 80)
@@ -221,8 +246,8 @@ def _bezier_trajectory(start: tuple[float, float], end: tuple[float, float], ste
     for i in range(steps + 1):
         t = i / steps
         t = t * t * (3 - 2 * t)  # smoothstep easing
-        x = (1 - t) ** 2 * sx + 2 * (1 - t) * t * cx + t ** 2 * ex
-        y = (1 - t) ** 2 * sy + 2 * (1 - t) * t * cy + t ** 2 * ey
+        x = (1 - t) ** 2 * sx + 2 * (1 - t) * t * cx + t**2 * ex
+        y = (1 - t) ** 2 * sy + 2 * (1 - t) * t * cy + t**2 * ey
         pts.append((round(x + random.gauss(0, 0.6), 2), round(y + random.gauss(0, 0.6), 2)))
     return pts
 
@@ -276,7 +301,12 @@ async def main() -> None:
 
     # ── 连接 ──
     import urllib.request
-    data = json.loads(urllib.request.urlopen('http://127.0.0.1:9222/json').read())
+
+    def read_targets():
+        with urllib.request.urlopen('http://127.0.0.1:9222/json', timeout=5) as response:
+            return json.loads(response.read())
+
+    data = await asyncio.to_thread(read_targets)
     ws_url = next(p['webSocketDebuggerUrl'] for p in data if 'xiaohongshu' in p.get('url', ''))
     print(f'\n[CDP] Connecting to {ws_url[:50]}...')
     cdp = CDPClient(ws_url)
@@ -318,9 +348,11 @@ async def main() -> None:
     print('=' * 70)
 
     # ── A: 提取首页笔记列表 ──
-    r = await run_action(scope, ExtractDOMAction(
-        description='提取首页推荐笔记',
-        js_expression="""
+    r = await run_action(
+        scope,
+        ExtractDOMAction(
+            description='提取首页推荐笔记',
+            js_expression="""
         (() => {
             const notes = document.querySelectorAll('section.note-item');
             const items = [];
@@ -338,7 +370,9 @@ async def main() -> None:
             return JSON.stringify(items);
         })()
         """,
-    ), 'A')
+        ),
+        'A',
+    )
 
     if r and r.data:
         print('       笔记列表:')
@@ -357,17 +391,23 @@ async def main() -> None:
     await asyncio.sleep(0.8)
 
     # ── D: 点击"美食"分类（贝塞尔曲线鼠标轨迹） ──
-    await run_action(scope, ClickAction(
-        selector='div.channel',  # XHS 分类标签的真实 class
-        description='点击第一个分类标签（stealth trajectory）',
-    ), 'D')
+    await run_action(
+        scope,
+        ClickAction(
+            selector='div.channel',  # XHS 分类标签的真实 class
+            description='点击第一个分类标签（stealth trajectory）',
+        ),
+        'D',
+    )
     await asyncio.sleep(1.5)
 
     # ── E: 精确点击"美食"标签 — mark via DOM, then click via event system ──
     # Step 1: Use ExtractDOMAction to find and mark the target element
-    await run_action(scope, ExtractDOMAction(
-        description='标记"美食"标签 (data-target)',
-        js_expression="""
+    await run_action(
+        scope,
+        ExtractDOMAction(
+            description='标记"美食"标签 (data-target)',
+            js_expression="""
         (() => {
             const divs = document.querySelectorAll('div.channel');
             for (const d of divs) {
@@ -379,18 +419,26 @@ async def main() -> None:
             return JSON.stringify({found: false});
         })()
         """,
-    ), 'E-mark')
+        ),
+        'E-mark',
+    )
     # Step 2: Click via event system — stealth_click handler applies bezier trajectory
-    await run_action(scope, ClickAction(
-        selector='[data-target="meishi"]',
-        description='stealth-click "美食" 标签',
-    ), 'E')
+    await run_action(
+        scope,
+        ClickAction(
+            selector='[data-target="meishi"]',
+            description='stealth-click "美食" 标签',
+        ),
+        'E',
+    )
     await asyncio.sleep(2)
 
     # ── F: 提取美食分类下的笔记 ──
-    r2 = await run_action(scope, ExtractDOMAction(
-        description='提取"美食"分类的笔记',
-        js_expression="""
+    r2 = await run_action(
+        scope,
+        ExtractDOMAction(
+            description='提取"美食"分类的笔记',
+            js_expression="""
         (() => {
             const notes = document.querySelectorAll('section.note-item');
             const items = [];
@@ -403,7 +451,9 @@ async def main() -> None:
             return JSON.stringify(items);
         })()
         """,
-    ), 'F')
+        ),
+        'F',
+    )
 
     if r2 and r2.data:
         print('       美食笔记:')
@@ -434,8 +484,9 @@ async def main() -> None:
     # 截图
     screenshot = await cdp.send('Page.captureScreenshot', {'format': 'png'})
     import base64
-    with open('/tmp/xhs_final.png', 'wb') as f:
-        f.write(base64.b64decode(screenshot['data']))
+    from pathlib import Path
+
+    await asyncio.to_thread(Path('/tmp/xhs_final.png').write_bytes, base64.b64decode(screenshot['data']))
     print('\n  Final screenshot saved: /tmp/xhs_final.png')
 
     await group.close_all()

@@ -34,6 +34,27 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Project-specific
-bu_ref/
-references/
+# Local reference sources and historical research (never shipped)
+/bu_ref/
+/qt_ref/
+/other_framework/
+/references/
+/analysis/
+
+# Local agent settings and scratch work
+/.claude/
+/.scratch/
+/tmp/
+.env
+.env.*
+!.env.example
+
+# Generated browser captures
+/demo/screenshots/
+/demo/screenshot.png
+/traces/
+
+# Additional tool caches
+.coverage.*
+.pyright/
+.tox/

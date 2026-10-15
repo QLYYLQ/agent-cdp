@@ -37,10 +37,10 @@ class FakeCDPClient:
         if callback in cbs:
             cbs.remove(callback)
 
-    def fire(self, method: str, params: dict[str, Any]) -> None:
+    def fire(self, method: str, params: dict[str, Any], session_id: str | None = None) -> None:
         """Simulate a CDP event arriving."""
         for cb in list(self._listeners.get(method, [])):
-            cb(params)
+            cb(params, session_id)
 
 
 # ── Tests ──
@@ -95,7 +95,7 @@ class TestSessionIdFiltering:
         handler.assert_not_called()
 
         # Correct session → should fire
-        cdp.fire('Page.loadEventFired', {'sessionId': 'sess-A'})
+        cdp.fire('Page.loadEventFired', {}, 'sess-A')
         handler.assert_called_once()
 
     def test_no_session_filter_when_none(self) -> None:
@@ -112,8 +112,8 @@ class TestSessionIdFiltering:
         cdp.fire('Page.loadEventFired', {'sessionId': 'any-session'})
         handler.assert_called_once()
 
-    def test_no_session_id_in_params_passes_through(self) -> None:
-        """When session_id is set but params lack sessionId, event should still fire."""
+    def test_missing_route_session_does_not_match(self) -> None:
+        """A session binding requires an explicit envelope route."""
         cdp = FakeCDPClient()
         scope = EventScope('tab-1')
         bridge = CDPEventBridge(cdp, scope, session_id='sess-A')
@@ -123,8 +123,8 @@ class TestSessionIdFiltering:
 
         bridge.bridge('Page.loadEventFired', lambda p: CDPPageLoad())
 
-        cdp.fire('Page.loadEventFired', {})  # no sessionId key
-        handler.assert_called_once()
+        cdp.fire('Page.loadEventFired', {})
+        handler.assert_not_called()
 
 
 class TestCloseRemovesCallbacks:

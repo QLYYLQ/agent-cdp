@@ -93,8 +93,7 @@ async def run_demo() -> None:
         group = ScopeGroup('browser')
         tab_scope = await group.create_scope(
             'tab-1',
-            target_id=target_id,
-            session_id=session_id,
+            metadata={'target_id': target_id, 'session_id': session_id},
         )
         ok('ScopeGroup "browser" + EventScope "tab-1" created (event loop running)')
 
@@ -212,8 +211,7 @@ async def run_demo() -> None:
 
         tab_scope_2 = await group.create_scope(
             'tab-2',
-            target_id=target_id_2,
-            session_id=session_id_2,
+            metadata={'target_id': target_id_2, 'session_id': session_id_2},
         )
         ok(f'Second tab created: scope "tab-2", target {target_id_2[:12]}...')
 

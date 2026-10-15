@@ -74,8 +74,16 @@ class TestAsyncHandlerError:
         async def async_handler(event: FailFastEvent) -> str:
             return 'oops'
 
-        scope.connect(FailFastEvent, async_handler, mode=ConnectionType.DIRECT)
+        with pytest.raises(AsyncHandlerError, match='DIRECT'):
+            scope.connect(FailFastEvent, async_handler, mode=ConnectionType.DIRECT)
 
+    def test_dynamic_coroutine_return_still_checked_during_emit(self) -> None:
+        scope = EventScope('dynamic')
+
+        async def async_handler(event: FailFastEvent) -> str:
+            return 'oops'
+
+        scope.connect(FailFastEvent, lambda event: async_handler(event), mode=ConnectionType.DIRECT)
         with pytest.raises(AsyncHandlerError, match='coroutine'):
             scope.emit(FailFastEvent())
 

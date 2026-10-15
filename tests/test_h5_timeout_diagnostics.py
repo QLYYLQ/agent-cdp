@@ -22,7 +22,9 @@ class TestEventTimeoutErrorDiagnostics:
 
     def test_pending_count_in_error(self) -> None:
         err = EventTimeoutError(
-            'NavEvent', 'abc123456789', 5.0,
+            'NavEvent',
+            'abc123456789',
+            5.0,
             pending_count=3,
         )
         assert err.pending_count == 3
@@ -30,7 +32,9 @@ class TestEventTimeoutErrorDiagnostics:
 
     def test_completed_handlers_in_error(self) -> None:
         err = EventTimeoutError(
-            'NavEvent', 'abc123456789', 5.0,
+            'NavEvent',
+            'abc123456789',
+            5.0,
             pending_count=1,
             completed_handlers=['handler_a', 'handler_b'],
         )
@@ -42,7 +46,9 @@ class TestEventTimeoutErrorDiagnostics:
 
     def test_failed_handlers_in_error(self) -> None:
         err = EventTimeoutError(
-            'NavEvent', 'abc123456789', 5.0,
+            'NavEvent',
+            'abc123456789',
+            5.0,
             pending_count=1,
             failed_handlers=['broken_handler'],
         )
@@ -51,7 +57,9 @@ class TestEventTimeoutErrorDiagnostics:
 
     def test_timed_out_handlers_in_error(self) -> None:
         err = EventTimeoutError(
-            'NavEvent', 'abc123456789', 5.0,
+            'NavEvent',
+            'abc123456789',
+            5.0,
             pending_count=0,
             timed_out_handlers=['slow_handler'],
         )
@@ -60,7 +68,9 @@ class TestEventTimeoutErrorDiagnostics:
 
     def test_no_handlers_responded_message(self) -> None:
         err = EventTimeoutError(
-            'NavEvent', 'abc123456789', 5.0,
+            'NavEvent',
+            'abc123456789',
+            5.0,
             pending_count=2,
         )
         assert 'no handlers responded' in str(err)
@@ -106,7 +116,7 @@ class TestTimeoutDiagnosticsIntegration:
         assert err.pending_count >= 1
         assert 'handler(s) still pending' in str(err)
 
-        await scope.close()
+        await scope.close(graceful=False)
 
     @pytest.mark.asyncio
     async def test_timeout_reports_completed_and_timed_out_handlers(self) -> None:
@@ -125,11 +135,9 @@ class TestTimeoutDiagnosticsIntegration:
         scope.connect(DiagSlowEvent, fast_handler, mode=ConnectionType.QUEUED, target_scope=scope, priority=100)
         scope.connect(DiagSlowEvent, slow_handler, mode=ConnectionType.QUEUED, target_scope=scope, priority=0)
 
-        # event_timeout applies both per-handler and to await. fast_handler finishes fast,
-        # slow_handler hits per-handler timeout and gets recorded as TIMEOUT.
-        # Then await completes because pending reaches 0 (both processed).
-        # So we check event_results directly instead of catching EventTimeoutError.
-        event = DiagSlowEvent(event_timeout=0.1)
+        # Execution has an independent budget. Waiting completes after both deliveries
+        # settle, while the slow handler keeps an explicit execution-timeout result.
+        event = DiagSlowEvent(event_timeout=1.0, execution_timeout=0.1)
         scope.emit(event)
 
         # Wait for both handlers to be processed (fast completes, slow times out)
@@ -147,4 +155,4 @@ class TestTimeoutDiagnosticsIntegration:
         assert names_statuses[fast_name[0]] == 'completed'
         assert names_statuses[slow_name[0]] == 'timeout'
 
-        await scope.close()
+        await scope.close(graceful=False)

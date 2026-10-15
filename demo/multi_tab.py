@@ -162,8 +162,7 @@ async def run_multi_tab() -> None:
         for name, sess in tab_sessions.items():
             scope = await group.create_scope(
                 f'tab-{name.lower()}',
-                target_id=sess['target_id'],
-                session_id=sess['session_id'],
+                metadata={'target_id': sess['target_id'], 'session_id': sess['session_id']},
             )
             scopes[name] = scope
             ok(f'{tab_label(name)} EventScope "tab-{name.lower()}" created')

@@ -4,6 +4,14 @@
 
 A Qt-inspired, connection-based event framework designed for AI agent browser automation pipelines. Replaces the single-bus model (bubus/browser-use) with scoped, concurrent, priority-aware event dispatch — enabling multi-tab isolation, zero-latency security gating, and N:M connection topologies.
 
+Version **0.5.0** implements explicit delivery contracts, independent waiting and
+execution budgets, cancellation, bounded queues, prefix draining, and resource
+ownership. See the [migration guide](docs/migration-0.5.md),
+[24-requirement acceptance map](docs/requirements-0.5.md), and [changelog](CHANGELOG.md).
+
+A scope is a serial event scheduling domain. BrowserContext permissions, target
+ownership, and security isolation across runs remain the caller's responsibility.
+
 ## Who is this for?
 
 - **Browser automation framework authors** building AI agent pipelines (like browser-use, Skyvern, Agent-TARS) who need per-tab event isolation and concurrent dispatch
@@ -85,8 +93,8 @@ High-priority Direct handler blocks the event *before* navigation starts — not
 from agent_cdp.scope import EventScope, ScopeGroup
 
 group = ScopeGroup('browser')
-tab1 = await group.create_scope('tab-1', target_id='...')
-tab2 = await group.create_scope('tab-2', target_id='...')
+tab1 = await group.create_scope('tab-1', metadata={'target_id': '...'})
+tab2 = await group.create_scope('tab-2', metadata={'target_id': '...'})
 
 # Each scope has its own event loop — true concurrent processing
 tab1.emit(NavigateToUrlEvent(url='https://site-a.com'))
@@ -181,12 +189,10 @@ from agent_cdp.advanced import expect
 event = tab.emit(NavigateToUrlEvent(url='https://example.com'))
 await event  # waits for all Queued handlers
 
-# Declarative future event waiting
-complete = await expect(
-    tab, NavigationCompleteEvent,
-    include=lambda e: e.url == 'https://example.com',
-    timeout=30.0,
-)
+# Register before the trigger; no task scheduling or sleep is needed.
+with expect(tab, NavigationCompleteEvent, timeout=30.0) as waiter:
+    tab.emit(NavigateToUrlEvent(url='https://example.com'))
+    complete = await waiter
 ```
 
 ### Event logging with conscribe deserialization
@@ -544,7 +550,7 @@ Phase 10: Tab Close → Auto-Disconnect
   ✓ [Google] still works after Bilibili closed (screenshot OK)
 ```
 
-`scope.close()` stops the event loop, severs all outgoing and incoming connections, and releases handler references for GC. Remaining scopes continue operating normally.
+`scope.close()` stops new input, closes owned bridges/waiters, and drains or cancels accepted deliveries within its budget. It disconnects connections after work exits; check `CloseResult.complete` when handlers may ignore cancellation. Remaining scopes continue operating normally.
 
 ### Fan-in / Fan-out / Cross-scope routing (demo.advanced)
 
@@ -590,10 +596,10 @@ uv run python -m demo.paused_target   # PausedTarget race-free setup (Amazon + X
 ## Installation
 
 ```bash
-pip install agent-cdp
+pip install "agent-cdp>=0.5.0"
 ```
 
-Requires Python >= 3.11.
+Requires Python >= 3.11, conscribe >= 2.0.0 and < 3, and Pydantic >= 2.7 and < 3.
 
 ## Quick start
 
@@ -672,7 +678,7 @@ New in agent-cdp:
 ├── Deep-copy broadcast
 ├── MRO-based event matching
 ├── connect_all() catch-all
-├── Backpressure control (bounded queue, drop-newest)
+├── Bounded queue with per-delivery rejection results and statistics
 ├── Direct handler timing monitor (>100ms warning)
 ├── CDPEventBridge (CDP → EventScope bridging)
 ├── CDPCommandProtocol (structural type for CDP clients)
@@ -685,8 +691,9 @@ New in agent-cdp:
 git clone https://github.com/QLYYLQ/agent-cdp.git
 cd agent-cdp
 uv sync
-uv run pytest -vxs tests/          # run all tests (302 tests)
-uv run ruff check --fix && uv run ruff format   # lint + format
+uv run pytest -vxs tests/          # run all tests
+uv run ruff check src tests demo scripts
+uv run ruff format --check src tests demo scripts
 uv run pyright                       # type check (strict mode)
 ```
 

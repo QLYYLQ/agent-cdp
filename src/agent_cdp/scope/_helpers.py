@@ -5,6 +5,8 @@ This is the sole 'dual-import' point that bridges events and connection packages
 
 from __future__ import annotations
 
+# The private recording helper is shared by the scope implementation.
+# pyright: reportUnusedFunction=false
 import functools
 from collections.abc import Callable
 from typing import Any

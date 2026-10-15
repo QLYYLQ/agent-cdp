@@ -80,7 +80,7 @@ class TestCreateConnectionViaConnect:
     def test_target_incoming_registered(self) -> None:
         source = ScopeStub('source')
         target = ScopeStub('target')
-        conn = connect(source, NavEvent, sample_handler, target_scope=target)
+        conn = connect(source, NavEvent, sample_handler, target_scope=target, mode=ConnectionType.DIRECT)
         assert conn in target.incoming
 
     def test_default_mode_is_auto(self) -> None:
@@ -150,7 +150,7 @@ class TestDisconnectRemovesFromScope:
     def test_removed_from_target(self) -> None:
         source = ScopeStub('s')
         target = ScopeStub('t')
-        conn = connect(source, NavEvent, sample_handler, target_scope=target)
+        conn = connect(source, NavEvent, sample_handler, target_scope=target, mode=ConnectionType.DIRECT)
         assert conn in target.incoming
         conn.disconnect()
         assert conn not in target.incoming
@@ -176,7 +176,7 @@ class TestWeakrefScopeReference:
     def test_target_scope_is_weakref(self) -> None:
         source = ScopeStub('s')
         target = ScopeStub('t')
-        conn = connect(source, NavEvent, sample_handler, target_scope=target)
+        conn = connect(source, NavEvent, sample_handler, target_scope=target, mode=ConnectionType.DIRECT)
         assert isinstance(conn.target_scope, weakref.ref)
         assert conn.target_scope() is target
 

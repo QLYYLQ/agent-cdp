@@ -13,11 +13,11 @@ Usage:
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
-from agent_cdp.events.base import BaseEvent
+from agent_cdp.events.base import DEFAULT_TIMEOUT, BaseEvent, WaitTimeout, wait_for_results
+from agent_cdp.events.contracts import Participation
 from agent_cdp.events.result import EventResult
 
 T = TypeVar('T')
@@ -27,7 +27,7 @@ T_Result = TypeVar('T_Result')
 class HandlerError(Exception):
     """Wraps a handler exception with identity info for diagnostics."""
 
-    def __init__(self, original: Exception, handler_name: str, connection_id: str) -> None:
+    def __init__(self, original: BaseException, handler_name: str, connection_id: str) -> None:
         self.original = original
         self.handler_name = handler_name
         self.connection_id = connection_id
@@ -39,34 +39,45 @@ def _is_truthy(er: EventResult[Any]) -> bool:
     return er.is_success
 
 
-async def _wait_for_completion(event: BaseEvent[Any], timeout: float | None = None) -> None:
-    """Wait for all pending handlers to complete.
+async def _wait_for_completion(event: BaseEvent[Any], timeout: WaitTimeout = DEFAULT_TIMEOUT) -> None:
+    """Use the same independent waiting budget and diagnostics as ``await event``."""
+    await wait_for_results(event, timeout=timeout)
 
-    Fast-path when _pending_count == 0. Otherwise await with effective timeout
-    (explicit timeout > event_timeout > indefinite).
-    """
-    if event._pending_count == 0:
-        return
-    effective_timeout = timeout if timeout is not None else event.event_timeout
-    await asyncio.wait_for(event._completion.wait(), timeout=effective_timeout)
+
+def _aggregation_results(event: BaseEvent[T_Result]) -> tuple[EventResult[T_Result], ...]:
+    """An explicit request aggregates its execution participants, not observers."""
+    records = tuple(event.results.values())
+    contract = event.request_contract
+    if contract is None:
+        return records
+    names = contract.required_receivers
+    return tuple(
+        record
+        for record in records
+        if record.participation is Participation.HANDLER
+        and (not names or any(name in (record.connection_id, record.receiver_key) for name in names))
+    )
 
 
 def _maybe_raise_errors(event: BaseEvent[Any], raise_if_any: bool) -> None:
     """If raise_if_any, raise HandlerError wrapping the first error found."""
     if not raise_if_any:
         return
-    for er in event.event_results.values():
-        if isinstance(er, EventResult) and er.error is not None:
+    for er in _aggregation_results(event):
+        if er.error is not None or er.business_error is not None:
+            cause = er.business_error or er.error
+            assert cause is not None
             raise HandlerError(
-                original=er.error,
+                original=cause,
                 handler_name=er.handler_name,
                 connection_id=er.connection_id,
             )
+    event.check_success()
 
 
 async def event_result(
     event: BaseEvent[T_Result],
-    timeout: float | None = None,
+    timeout: WaitTimeout = DEFAULT_TIMEOUT,
     raise_if_any: bool = True,
     raise_if_none: bool = True,
 ) -> T_Result | None:
@@ -78,50 +89,42 @@ async def event_result(
     await _wait_for_completion(event, timeout)
     _maybe_raise_errors(event, raise_if_any)
 
-    for er in event.event_results.values():
-        if isinstance(er, EventResult) and er.is_success and er.result is not None:
+    for er in _aggregation_results(event):
+        if er.is_success and er.result is not None:
             return er.result
 
     if raise_if_none:
-        raise ValueError('All handlers returned non-None result: none found')
+        raise ValueError('No successful handler returned a non-None result')
     return None
 
 
 async def event_results_list(
     event: BaseEvent[T_Result],
-    timeout: float | None = None,
+    timeout: WaitTimeout = DEFAULT_TIMEOUT,
     raise_if_any: bool = True,
 ) -> list[T_Result]:
     """Return all non-None results from successful handlers, preserving insertion order."""
     await _wait_for_completion(event, timeout)
     _maybe_raise_errors(event, raise_if_any)
 
-    return [
-        er.result
-        for er in event.event_results.values()
-        if isinstance(er, EventResult) and er.is_success and er.result is not None
-    ]
+    return [er.result for er in _aggregation_results(event) if er.is_success and er.result is not None]
 
 
 async def event_results_by_handler_name(
     event: BaseEvent[T_Result],
-    timeout: float | None = None,
+    timeout: WaitTimeout = DEFAULT_TIMEOUT,
     raise_if_any: bool = True,
 ) -> dict[str, T_Result | None]:
     """Return results keyed by handler_name. Duplicate names: last-wins."""
     await _wait_for_completion(event, timeout)
     _maybe_raise_errors(event, raise_if_any)
 
-    return {
-        er.handler_name: er.result
-        for er in event.event_results.values()
-        if isinstance(er, EventResult) and er.is_success
-    }
+    return {er.handler_name: er.result for er in _aggregation_results(event) if er.is_success}
 
 
 async def event_results_flat_dict(
     event: BaseEvent[Any],
-    timeout: float | None = None,
+    timeout: WaitTimeout = DEFAULT_TIMEOUT,
     raise_if_any: bool = True,
     raise_if_conflicts: bool = True,
 ) -> dict[str, Any]:
@@ -134,8 +137,8 @@ async def event_results_flat_dict(
     _maybe_raise_errors(event, raise_if_any)
 
     merged: dict[str, Any] = {}
-    for er in event.event_results.values():
-        if not isinstance(er, EventResult) or not er.is_success:
+    for er in _aggregation_results(event):
+        if not er.is_success:
             continue
         r = er.result
         if not isinstance(r, dict):
@@ -144,13 +147,13 @@ async def event_results_flat_dict(
             conflicts = merged.keys() & r.keys()
             if conflicts:
                 raise KeyError(f'Conflicting keys: {conflicts}')
-        merged.update(r)
+        merged.update(cast(dict[str, Any], r))
     return merged
 
 
 async def event_results_flat_list(
     event: BaseEvent[Any],
-    timeout: float | None = None,
+    timeout: WaitTimeout = DEFAULT_TIMEOUT,
     raise_if_any: bool = True,
 ) -> list[Any]:
     """Concatenate all list/tuple results from successful handlers.
@@ -161,21 +164,21 @@ async def event_results_flat_list(
     _maybe_raise_errors(event, raise_if_any)
 
     flat: list[Any] = []
-    for er in event.event_results.values():
-        if not isinstance(er, EventResult) or not er.is_success:
+    for er in _aggregation_results(event):
+        if not er.is_success:
             continue
         r = er.result
         if isinstance(r, (list, tuple)):
-            flat.extend(r)
+            flat.extend(cast(list[Any] | tuple[Any, ...], r))
     return flat
 
 
 async def event_results_filtered(
     event: BaseEvent[T_Result],
     include: Callable[[EventResult[Any]], bool] = _is_truthy,
-    timeout: float | None = None,
+    timeout: WaitTimeout = DEFAULT_TIMEOUT,
 ) -> dict[str, EventResult[T_Result]]:
     """Return event_results filtered by predicate. Default: successful results only."""
     await _wait_for_completion(event, timeout)
 
-    return {key: er for key, er in event.event_results.items() if isinstance(er, EventResult) and include(er)}
+    return {key: er for key, er in event.results.items() if include(er)}

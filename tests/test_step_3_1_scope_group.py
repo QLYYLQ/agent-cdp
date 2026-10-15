@@ -36,7 +36,7 @@ class TestCreateScopeAndRetrieve:
         """create_scope returns EventScope, get_scope retrieves it, scope_ids lists it."""
         group = ScopeGroup('g1')
         try:
-            scope = await group.create_scope('tab-1', title='Example')
+            scope = await group.create_scope('tab-1', metadata={'title': 'Example'})
             assert isinstance(scope, EventScope)
             assert scope.scope_id == 'tab-1'
             assert scope.metadata.get('title') == 'Example'

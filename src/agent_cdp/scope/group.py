@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from agent_cdp.connection.connection import Connection
 from agent_cdp.connection.types import ConnectionType
 from agent_cdp.events.base import BaseEvent
+from agent_cdp.events.contracts import Participation, ResultContract
+from agent_cdp.scope.event_loop import CloseResult
 from agent_cdp.scope.scope import EventScope
 
 
@@ -24,43 +27,39 @@ class ScopeGroup:
         self.group_id = group_id
         self._scopes: dict[str, EventScope] = {}
 
-    async def create_scope(self, scope_id: str, **metadata: Any) -> EventScope:
-        """Create a new scope and auto-start its event loop.
-
-        Args:
-            scope_id: Unique identifier for the scope within this group.
-            **metadata: Arbitrary metadata passed to EventScope constructor.
-
-        Returns:
-            The newly created EventScope with its event loop running.
-
-        Raises:
-            KeyError: If scope_id already exists in this group.
-        """
+    async def create_scope(
+        self,
+        scope_id: str,
+        *,
+        queue_maxsize: int = 1024,
+        max_history_size: int = 1000,
+        slow_handler_threshold: float | None = 15.0,
+        slow_handler_check_interval: float = 5.0,
+        metadata: Mapping[str, Any] | None = None,
+    ) -> EventScope:
+        """Create and start a scope with the same explicit options as EventScope."""
         if scope_id in self._scopes:
-            msg = f'Scope {scope_id!r} already exists in group {self.group_id!r}'
-            raise KeyError(msg)
-
-        scope = EventScope(scope_id, **metadata)
-        await scope._event_loop.start()
+            raise KeyError(f'Scope {scope_id!r} already exists in group {self.group_id!r}')
+        scope = EventScope(
+            scope_id,
+            queue_maxsize=queue_maxsize,
+            max_history_size=max_history_size,
+            slow_handler_threshold=slow_handler_threshold,
+            slow_handler_check_interval=slow_handler_check_interval,
+            metadata=metadata,
+        )
+        await scope.start()
         self._scopes[scope_id] = scope
         return scope
 
-    async def close_scope(self, scope_id: str) -> None:
-        """Close and remove a scope from the group.
-
-        Args:
-            scope_id: The scope to close.
-
-        Raises:
-            KeyError: If scope_id is not found in this group.
-        """
-        if scope_id not in self._scopes:
-            msg = f'Scope {scope_id!r} not found in group {self.group_id!r}'
-            raise KeyError(msg)
-
-        scope = self._scopes.pop(scope_id)
-        await scope.close()
+    async def close_scope(self, scope_id: str, *, graceful: bool = True, timeout: float = 10.0) -> CloseResult:
+        """Remove a scope only after all its supervised work has actually ended."""
+        scope = self.get_scope(scope_id)
+        try:
+            return await scope.close(graceful=graceful, timeout=timeout)
+        finally:
+            if scope.is_closed:
+                self._scopes.pop(scope_id, None)
 
     def get_scope(self, scope_id: str) -> EventScope:
         """Get scope by ID.
@@ -115,6 +114,9 @@ class ScopeGroup:
         target_scope: EventScope | None = None,
         priority: int = 0,
         filter: Callable[[BaseEvent[Any]], bool] | None = None,
+        participation: Participation = Participation.HANDLER,
+        receiver_key: str | None = None,
+        result_contract: ResultContract | None = None,
     ) -> list[Connection]:
         """Connect handler to event_type on ALL current scopes.
 
@@ -141,19 +143,31 @@ class ScopeGroup:
                 target_scope=target_scope,
                 priority=priority,
                 filter=filter,
+                participation=participation,
+                receiver_key=receiver_key,
+                result_contract=result_contract,
             )
             connections.append(conn)
         return connections
 
-    async def close_all(self) -> None:
-        """Close all scopes in the group.
-
-        Iterates over a copy of the scopes dict to avoid mutation during iteration.
-        After closing, the group is empty.
-        """
-        for scope in list(self._scopes.values()):
-            await scope.close()
-        self._scopes.clear()
+    async def close_all(self, *, graceful: bool = True, timeout: float = 10.0) -> dict[str, CloseResult]:
+        """Attempt all scopes concurrently; retain unfinished scopes and aggregate cleanup failures."""
+        ids = tuple(self._scopes)
+        outcomes = await asyncio.gather(
+            *(self.close_scope(scope_id, graceful=graceful, timeout=timeout) for scope_id in ids),
+            return_exceptions=True,
+        )
+        errors = [outcome for outcome in outcomes if isinstance(outcome, Exception)]
+        if errors:
+            raise ExceptionGroup(f'Resource cleanup failed in group {self.group_id!r}', errors)
+        for outcome in outcomes:
+            if isinstance(outcome, BaseException):
+                raise outcome
+        return {
+            scope_id: outcome
+            for scope_id, outcome in zip(ids, outcomes, strict=True)
+            if isinstance(outcome, CloseResult)
+        }
 
     @property
     def scope_ids(self) -> list[str]:

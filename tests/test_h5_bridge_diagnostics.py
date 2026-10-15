@@ -36,10 +36,10 @@ class FakeCDPClient:
         if callback in cbs:
             cbs.remove(callback)
 
-    def fire(self, method: str, params: dict[str, Any]) -> None:
+    def fire(self, method: str, params: dict[str, Any], session_id: str | None = None) -> None:
         """Simulate a CDP event arriving."""
         for cb in list(self._listeners.get(method, [])):
-            cb(params)
+            cb(params, session_id)
 
 
 class FakeCDPCommandClient(FakeCDPClient):
@@ -53,7 +53,13 @@ class FakeCDPCommandClient(FakeCDPClient):
     def is_connected(self) -> bool:
         return self._connected
 
-    async def send(self, method: str, params: dict[str, Any] | None = None, session_id: str | None = None) -> Any:
+    async def send(
+        self,
+        method: str,
+        params: dict[str, Any] | None = None,
+        session_id: str | None = None,
+        timeout: float | None = None,
+    ) -> Any:
         return {}
 
 
@@ -68,7 +74,7 @@ class TestZeroHitReport:
         scope = EventScope('tab-1')
         bridge = CDPEventBridge(cdp, scope)
 
-        bridge.bridge('Browser.downloadWillBegin', lambda p: CDPTestEvent())
+        bridge.bridge('Browser.downloadWillBegin', lambda p: CDPTestEvent(), expect_hits=True)
         bridge.bridge('Page.loadEventFired', lambda p: CDPTestEvent())
 
         # Only fire Page event — Browser event never arrives
@@ -99,8 +105,8 @@ class TestZeroHitReport:
         scope = EventScope('tab-1')
         bridge = CDPEventBridge(cdp, scope)
 
-        bridge.bridge('Inspector.targetCrashed', lambda p: CDPTestEvent())
-        bridge.bridge('Browser.downloadWillBegin', lambda p: CDPTestEvent())
+        bridge.bridge('Inspector.targetCrashed', lambda p: CDPTestEvent(), expect_hits=True)
+        bridge.bridge('Browser.downloadWillBegin', lambda p: CDPTestEvent(), expect_hits=True)
 
         with caplog.at_level(logging.WARNING):
             bridge.close()
@@ -166,7 +172,7 @@ class TestHitCountsProperty:
         assert bridge.hit_counts['Page.loadEventFired'] == 0
 
         # Correct session → should count
-        cdp.fire('Page.loadEventFired', {'sessionId': 'sess-A'})
+        cdp.fire('Page.loadEventFired', {}, 'sess-A')
         assert bridge.hit_counts['Page.loadEventFired'] == 1
 
 

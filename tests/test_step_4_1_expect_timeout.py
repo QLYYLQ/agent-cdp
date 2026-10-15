@@ -147,13 +147,7 @@ class TestExpectAutoDisconnects:
 class TestHandlerTimeoutRecordsError:
     @pytest.mark.asyncio
     async def test_handler_timeout_records_error(self) -> None:
-        """Slow handler exceeding event_timeout records TimeoutError in EventResult.
-
-        With H4 enforcement, `await event` itself raises EventTimeoutError
-        when event_timeout expires. The per-handler timeout in ScopeEventLoop
-        records the TIMEOUT result on the EventResult before that deadline.
-        """
-        from agent_cdp.events.base import EventTimeoutError
+        """The handler execution budget records a timeout independently of waiting."""
 
         scope = EventScope('s1')
 
@@ -164,17 +158,12 @@ class TestHandlerTimeoutRecordsError:
         conn = scope.connect(ExpectNavEvent, slow_handler, mode=ConnectionType.QUEUED)
 
         # Use a very short timeout event
-        event = ExpectNavEvent(event_timeout=0.1)
+        event = ExpectNavEvent(execution_timeout=0.1)
         scope.emit(event)
 
         try:
             await scope._event_loop.start()
-            # The event-level timeout (0.1s) fires before the handler completes.
-            # EventTimeoutError is the expected outcome.
-            try:
-                await asyncio.wait_for(event, timeout=5.0)
-            except EventTimeoutError:
-                pass  # Expected: event_timeout enforced by __await__
+            await event.wait(timeout=5.0)
         finally:
             await scope._event_loop.stop()
 
@@ -201,23 +190,17 @@ class TestHandlerTimeoutDoesNotCrashLoop:
         conn = scope.connect(ExpectNavEvent, slow_handler, mode=ConnectionType.QUEUED)
 
         # First event will timeout
-        event1 = ExpectNavEvent(url='https://slow.com', event_timeout=0.1)
+        event1 = ExpectNavEvent(url='https://slow.com', execution_timeout=0.1)
         scope.emit(event1)
 
         # Second event should process normally
-        event2 = ExpectNavEvent(url='https://fast.com', event_timeout=5.0)
+        event2 = ExpectNavEvent(url='https://fast.com', execution_timeout=5.0)
         scope.emit(event2)
-
-        from agent_cdp.events.base import EventTimeoutError
 
         try:
             await scope._event_loop.start()
-            # event1's event_timeout=0.1 fires via __await__ → EventTimeoutError
-            try:
-                await asyncio.wait_for(event1, timeout=5.0)
-            except EventTimeoutError:
-                pass  # Expected
-            await asyncio.wait_for(event2, timeout=5.0)
+            await event1.wait(timeout=5.0)
+            await event2.wait(timeout=5.0)
         finally:
             await scope._event_loop.stop()
 
@@ -271,8 +254,8 @@ class TestDirectHandlerNoTimeoutEnforcement:
 
         conn = scope.connect(ExpectNavEvent, direct_handler, mode=ConnectionType.DIRECT)
 
-        # Even with a very short event_timeout, Direct handler executes fully
-        event = ExpectNavEvent(event_timeout=0.001)
+        # Even with a very short execution_timeout, Direct handler executes fully
+        event = ExpectNavEvent(execution_timeout=0.001)
         scope.emit(event)
 
         assert calls == ['direct-ran']

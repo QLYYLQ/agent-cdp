@@ -78,7 +78,6 @@ async def measure_framework_overhead(tc: TimingCollector) -> None:
     ok(f'BaseEvent construction: avg {fmt_us(avg_construct)} (100 iterations)')
 
     # 2. emit() with zero handlers
-    evt = NavigateToUrlEvent(url='https://test.com')
     # need a handler connected for event type validation... actually emit doesn't validate event type.
     # But there are no connections so it just loops over empty list.
     for _ in range(100):

@@ -35,13 +35,12 @@ async def launch_chrome(port: int = 9222) -> tuple[subprocess.Popen[bytes], str]
         'about:blank',
     ]
     logger.info('Launching Chrome: %s', ' '.join(args))
-    proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = await asyncio.to_thread(subprocess.Popen, args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # Poll until CDP is ready
     for attempt in range(30):
         try:
-            resp = urllib.request.urlopen(f'http://localhost:{port}/json/version', timeout=2)
-            data = json.loads(resp.read())
+            data = await asyncio.to_thread(_read_version, port)
             ws_url: str = data['webSocketDebuggerUrl']
             logger.info('Chrome ready on attempt %d — ws: %s', attempt + 1, ws_url)
             return proc, ws_url
@@ -61,3 +60,8 @@ def kill_chrome(proc: subprocess.Popen[bytes]) -> None:
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
+
+
+def _read_version(port: int) -> dict[str, str]:
+    with urllib.request.urlopen(f'http://localhost:{port}/json/version', timeout=2) as response:
+        return json.loads(response.read())

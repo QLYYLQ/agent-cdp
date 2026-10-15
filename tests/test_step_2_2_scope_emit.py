@@ -61,9 +61,8 @@ class TestDirectDispatch:
         async def async_handler(event: NavEvent) -> str:
             return 'oops'
 
-        scope.connect(NavEvent, async_handler, mode=ConnectionType.DIRECT)
-        with pytest.raises(TypeError, match='coroutine'):
-            scope.emit(NavEvent())
+        with pytest.raises(TypeError, match='Async'):
+            scope.connect(NavEvent, async_handler, mode=ConnectionType.DIRECT)
 
     def test_direct_handler_must_be_sync_awaitable(self) -> None:
         """isawaitable → TypeError."""
@@ -194,7 +193,7 @@ class TestHasPending:
     def test_has_pending_true_when_queued_enqueued(self) -> None:
         scope = EventScope('s1')
 
-        def handler(event: NavEvent) -> str:
+        async def handler(event: NavEvent) -> str:
             return 'ok'
 
         scope.connect(NavEvent, handler, mode=ConnectionType.QUEUED)
@@ -453,7 +452,7 @@ class TestAutoMode:
         source = EventScope('source')
         target = EventScope('target')
 
-        def handler(event: NavEvent) -> str:
+        async def handler(event: NavEvent) -> str:
             return 'ok'
 
         source.connect(NavEvent, handler, mode=ConnectionType.AUTO, target_scope=target)

@@ -67,9 +67,9 @@ async def main() -> None:
     group = ScopeGroup('demo')
     scope = await group.create_scope('tab')
 
-    c1 = scope.connect(ClickAction, security_check, mode=ConnectionType.DIRECT, priority=100)
+    scope.connect(ClickAction, security_check, mode=ConnectionType.DIRECT, priority=100)
     c2 = scope.connect(ClickAction, stealth_executor, mode=ConnectionType.QUEUED, priority=50)
-    c3 = scope.connect(ClickAction, screenshot_recorder, mode=ConnectionType.QUEUED, priority=0)
+    scope.connect(ClickAction, screenshot_recorder, mode=ConnectionType.QUEUED, priority=0)
 
     event = scope.emit(ClickAction(selector='#submit'))
     await event  # 等所有 QUEUED handler 完成

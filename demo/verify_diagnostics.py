@@ -32,13 +32,11 @@ from .events import (
     ScreenshotEvent,
 )
 from .watchdogs import (
-    CrashWatchdog,
     ScreenshotWatchdog,
     SecurityWatchdog,
     make_navigation_handler,
     save_screenshot,
 )
-
 
 # ── Custom event for timeout diagnostics test ──
 
@@ -76,9 +74,13 @@ async def run_verify() -> None:
         targets = await cdp.send('Target.getTargets')
         pages = [t for t in targets.get('targetInfos', []) if t.get('type') == 'page']
         target_id = pages[0]['targetId']
-        attach_result = await cdp.send('Target.attachToTarget', {
-            'targetId': target_id, 'flatten': True,
-        })
+        attach_result = await cdp.send(
+            'Target.attachToTarget',
+            {
+                'targetId': target_id,
+                'flatten': True,
+            },
+        )
         session_id = attach_result['sessionId']
         ok(f'Attached to session {session_id[:12]}...')
 
@@ -87,21 +89,27 @@ async def run_verify() -> None:
         await cdp.send('Network.enable', session_id=session_id)
 
         # Set viewport so Amazon renders properly (non-headless still needs a size)
-        await cdp.send('Emulation.setDeviceMetricsOverride', {
-            'width': 1280, 'height': 800, 'deviceScaleFactor': 1, 'mobile': False,
-        }, session_id=session_id)
+        await cdp.send(
+            'Emulation.setDeviceMetricsOverride',
+            {
+                'width': 1280,
+                'height': 800,
+                'deviceScaleFactor': 1,
+                'mobile': False,
+            },
+            session_id=session_id,
+        )
         ok('Viewport set to 1280x800')
 
         group = ScopeGroup('browser')
-        scope = await group.create_scope('amazon-tab', target_id=target_id, session_id=session_id)
+        scope = await group.create_scope('amazon-tab', metadata={'target_id': target_id, 'session_id': session_id})
         ok('Scope created')
 
         # Navigate to Amazon
         security = SecurityWatchdog(allowed_domains=['amazon.com', 'www.amazon.com'])
         security.attach(scope)
         nav_handler = make_navigation_handler(cdp, session_id, scope)
-        scope.connect(NavigateToUrlEvent, nav_handler,
-                      mode=ConnectionType.QUEUED, target_scope=scope, priority=0)
+        scope.connect(NavigateToUrlEvent, nav_handler, mode=ConnectionType.QUEUED, target_scope=scope, priority=0)
 
         info('Navigating to https://www.amazon.com ...')
         nav_event = NavigateToUrlEvent(url='https://www.amazon.com')
@@ -138,13 +146,17 @@ async def run_verify() -> None:
         diag_bridge.bridge(
             'Browser.downloadWillBegin',
             lambda p: BrowserErrorEvent(
-                error_type='download', message='download', details=str(p),
+                error_type='download',
+                message='download',
+                details=str(p),
             ),
         )
         diag_bridge.bridge(
             'Page.loadEventFired',
             lambda p: BrowserErrorEvent(
-                error_type='load', message='page loaded', details=str(p),
+                error_type='load',
+                message='page loaded',
+                details=str(p),
             ),
         )
 
@@ -180,10 +192,8 @@ async def run_verify() -> None:
             await asyncio.sleep(999)
             return 'never'
 
-        scope.connect(DiagTimeoutEvent, fast_direct_handler,
-                      mode=ConnectionType.DIRECT, priority=100)
-        scope.connect(DiagTimeoutEvent, slow_queued_handler,
-                      mode=ConnectionType.QUEUED, target_scope=scope, priority=0)
+        scope.connect(DiagTimeoutEvent, fast_direct_handler, mode=ConnectionType.DIRECT, priority=100)
+        scope.connect(DiagTimeoutEvent, slow_queued_handler, mode=ConnectionType.QUEUED, target_scope=scope, priority=0)
 
         diag_event = DiagTimeoutEvent(event_timeout=0.3)
         scope.emit(diag_event)
@@ -196,7 +206,7 @@ async def run_verify() -> None:
             await diag_event
             fail('Expected EventTimeoutError but event completed!')
         except EventTimeoutError as e:
-            ok(f'EventTimeoutError raised!')
+            ok('EventTimeoutError raised!')
             ok(f'  event_type: {e.event_type}')
             ok(f'  timeout: {e.timeout}s')
             ok(f'  pending_count: {e.pending_count}')
